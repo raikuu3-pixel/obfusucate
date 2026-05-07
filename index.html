@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CoolLight v3</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <canvas id="signalCanvas" aria-hidden="true"></canvas>
+
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">CL</span>
+          <div>
+            <p class="eyebrow">Lua Protection Suite</p>
+            <h1>CoolLight v3</h1>
+          </div>
+        </div>
+        <div class="top-actions">
+          <label class="language-select" for="languageSelect">
+            <span data-i18n="languageLabel">Bahasa</span>
+            <select id="languageSelect" aria-label="Pilih bahasa">
+              <option value="id" selected>Indonesia</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <div class="status-pill" id="statusPill" aria-live="polite">Siap</div>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="CoolLight workspace">
+        <aside class="control-panel" aria-label="Pengaturan obfuscator">
+          <div class="process-card" aria-label="Proses obfuscate aktif">
+            <span class="process-kicker" data-i18n="processKicker">Proses tetap</span>
+            <strong>VM Pack + Dynamic Keys</strong>
+            <p data-i18n="processDescription">Kode Lua dipadatkan ke VM state-machine acak dengan dynamic key, string decrypt on-demand, dan mode Roblox/Luau.</p>
+            <div class="protection-list">
+              <span>VM</span>
+              <span>Dynamic Keys</span>
+              <span>String Table</span>
+              <span>Opaque</span>
+              <span>Junk Ops</span>
+              <span>Anti-Hook</span>
+              <span>Mutation</span>
+              <span>Luau</span>
+              <span>Watermark</span>
+            </div>
+          </div>
+
+          <div class="panel-block">
+            <label for="presetSelect" data-i18n="presetLabel">Level kilau</label>
+            <select id="presetSelect">
+              <option value="balanced" selected>Gold Balanced</option>
+              <option value="compact">Pearl Compact</option>
+              <option value="heavy">Royal Heavy</option>
+            </select>
+          </div>
+
+          <div class="toggle-row">
+            <input id="compatToggle" type="checkbox" checked />
+            <label for="compatToggle" data-i18n="compatLabel">Loader Lua 5.1+</label>
+          </div>
+
+          <div class="toggle-row">
+            <input id="robloxToggle" type="checkbox" checked />
+            <label for="robloxToggle" data-i18n="robloxLabel">Mode Roblox/Luau</label>
+          </div>
+
+          <div class="toggle-row">
+            <input id="bannerToggle" type="checkbox" checked />
+            <label for="bannerToggle" data-i18n="bannerLabel">Tambahkan header</label>
+          </div>
+
+          <div class="stats-grid" aria-label="Statistik kode">
+            <div>
+              <span>Input</span>
+              <strong id="inputBytes">0 B</strong>
+            </div>
+            <div>
+              <span>Output</span>
+              <strong id="outputBytes">0 B</strong>
+            </div>
+            <div>
+              <span data-i18n="ratioLabel">Rasio</span>
+              <strong id="ratioValue">0%</strong>
+            </div>
+            <div>
+              <span data-i18n="linesLabel">Baris</span>
+              <strong id="lineCount">0</strong>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="primary" id="obfuscateBtn" type="button" data-i18n="obfuscateButton">Obfuscate Sekarang</button>
+            <button id="sampleBtn" type="button" data-i18n="sampleButton">Contoh</button>
+            <button id="clearBtn" type="button" data-i18n="clearButton">Bersihkan</button>
+          </div>
+        </aside>
+
+        <section class="editor-grid">
+          <div class="editor-panel">
+            <div class="editor-header">
+              <h2 data-i18n="inputTitle">Kode Lua</h2>
+              <button id="pasteBtn" type="button" data-i18n="pasteButton">Tempel</button>
+            </div>
+            <textarea
+              id="inputCode"
+              spellcheck="false"
+              data-i18n-placeholder="inputPlaceholder"
+              placeholder="Tulis atau tempel kode Lua di sini..."
+            ></textarea>
+          </div>
+
+          <div class="editor-panel output-panel">
+            <div class="editor-header">
+              <h2 data-i18n="outputTitle">Hasil CoolLight v3</h2>
+              <div class="inline-actions">
+                <button id="copyBtn" type="button" data-i18n="copyButton">Salin</button>
+                <button id="downloadBtn" type="button" data-i18n="downloadButton">Unduh</button>
+              </div>
+            </div>
+            <textarea
+              id="outputCode"
+              spellcheck="false"
+              readonly
+              data-i18n-placeholder="outputPlaceholder"
+              placeholder="Hasil CoolLight v3 akan muncul di sini..."
+            ></textarea>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
