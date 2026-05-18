@@ -24,7 +24,7 @@ const translations = {
     languageLabel: "Bahasa",
     ready: "Siap",
     processKicker: "Proses tetap",
-    processDescription: "Kode Lua dipadatkan ke VM state-machine acak dengan dynamic key, string decrypt on-demand, dan mode Roblox/Luau.",
+    processDescription: "Kode Lua dipadatkan ke triple-layer VM acak dengan rolling cipher, poison chunks, phantom opcodes, string decrypt on-demand, dan mode Roblox/Luau.",
     presetLabel: "Level kilau",
     compatLabel: "Loader Lua 5.1+",
     robloxLabel: "Mode Roblox/Luau",
@@ -37,12 +37,12 @@ const translations = {
     inputTitle: "Kode Lua",
     pasteButton: "Tempel",
     inputPlaceholder: "Tulis atau tempel kode Lua di sini...",
-    outputTitle: "Hasil CoolLight v3",
+    outputTitle: "Hasil CoolLight Nightmare VM",
     copyButton: "Salin",
     downloadButton: "Unduh",
-    outputPlaceholder: "Hasil CoolLight v3 akan muncul di sini...",
+    outputPlaceholder: "Hasil CoolLight Nightmare VM akan muncul di sini...",
     emptyInput: "Masukkan kode Lua",
-    done: "CoolLight v3 selesai",
+    done: "CoolLight Nightmare VM selesai",
     failed: "Gagal memproses kode",
     noOutput: "Belum ada hasil",
     copied: "Disalin",
@@ -56,7 +56,7 @@ const translations = {
     languageLabel: "Language",
     ready: "Ready",
     processKicker: "Fixed process",
-    processDescription: "Lua code is packed into a randomized state-machine VM with dynamic keys, on-demand string decrypt, and Roblox/Luau mode.",
+    processDescription: "Lua code is packed into a randomized triple-layer VM with rolling ciphers, poison chunks, phantom opcodes, on-demand string decrypt, and Roblox/Luau mode.",
     presetLabel: "Shine level",
     compatLabel: "Lua 5.1+ loader",
     robloxLabel: "Roblox/Luau mode",
@@ -69,12 +69,12 @@ const translations = {
     inputTitle: "Lua Code",
     pasteButton: "Paste",
     inputPlaceholder: "Write or paste Lua code here...",
-    outputTitle: "CoolLight v3 Output",
+    outputTitle: "CoolLight Nightmare VM Output",
     copyButton: "Copy",
     downloadButton: "Download",
-    outputPlaceholder: "CoolLight v3 output will appear here...",
+    outputPlaceholder: "CoolLight Nightmare VM output will appear here...",
     emptyInput: "Enter Lua code",
-    done: "CoolLight v3 complete",
+    done: "CoolLight Nightmare VM complete",
     failed: "Failed to process code",
     noOutput: "No output yet",
     copied: "Copied",
@@ -106,6 +106,56 @@ end
 print("Total:", coins)`;
 
 const encoder = new TextEncoder();
+
+const PRESET_PROFILES = {
+  compact: {
+    chunkRange: [50, 82],
+    perLine: 24,
+    layers: 1,
+    numericArmor: false,
+    decoyRatio: 0,
+    phantomRatio: 0,
+  },
+  balanced: {
+    chunkRange: [24, 46],
+    perLine: 16,
+    layers: 1,
+    numericArmor: false,
+    decoyRatio: 0.08,
+    phantomRatio: 0.12,
+  },
+  heavy: {
+    chunkRange: [14, 28],
+    perLine: 12,
+    layers: 1,
+    numericArmor: true,
+    decoyRatio: 0.16,
+    phantomRatio: 0.22,
+  },
+  god: {
+    chunkRange: [8, 16],
+    perLine: 10,
+    layers: 2,
+    numericArmor: true,
+    decoyRatio: 0.22,
+    phantomRatio: 0.3,
+  },
+};
+
+function presetProfile(preset) {
+  return PRESET_PROFILES[preset] || PRESET_PROFILES.balanced;
+}
+
+function installGodPreset() {
+  if (!presetSelect.querySelector('option[value="god"]')) {
+    const option = document.createElement("option");
+    option.value = "god";
+    option.textContent = "Luraph Nightmare VM";
+    presetSelect.appendChild(option);
+  }
+
+  if (!presetSelect.value) presetSelect.value = "balanced";
+}
 
 function translate(key) {
   return translations[currentLanguage][key] || translations.id[key] || key;
@@ -282,6 +332,57 @@ function randomInt(min, max) {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
+function gcd(a, b) {
+  let x = Math.abs(a);
+  let y = Math.abs(b);
+
+  while (y) {
+    const next = x % y;
+    x = y;
+    y = next;
+  }
+
+  return x || 1;
+}
+
+function modInverse256(value) {
+  for (let candidate = 1; candidate < 256; candidate += 2) {
+    if ((value * candidate) % 256 === 1) return candidate;
+  }
+
+  return 1;
+}
+
+function randomOddByte() {
+  return randomInt(1, 127) * 2 - 1;
+}
+
+function randomStride(length) {
+  if (length <= 1) return 1;
+  let stride = randomInt(2, Math.max(2, length - 1));
+  let attempts = 0;
+
+  while (gcd(stride, length) !== 1 && attempts < 64) {
+    stride = randomInt(2, Math.max(2, length - 1));
+    attempts += 1;
+  }
+
+  return gcd(stride, length) === 1 ? stride : 1;
+}
+
+function luaNumber(value, armored = false, chance = 1) {
+  if (!armored || Math.random() > chance) return String(value);
+
+  const pad = randomInt(9, 91);
+  const scale = randomInt(2, 9);
+  const style = randomInt(0, 3);
+
+  if (style === 0) return `(${value + pad}-${pad})`;
+  if (style === 1) return `((${value * scale})/${scale})`;
+  if (style === 2) return `(${value + pad + scale}-${pad}-${scale})`;
+  return `(((${value + pad})-${scale})-(${pad}-${scale}))`;
+}
+
 function shuffle(items) {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i -= 1) {
@@ -297,21 +398,25 @@ function checksumNumbers(numbers, salt) {
   }, 0);
 }
 
-function chunkNumbers(numbers, perLine = 16) {
+function randomBytes(length) {
+  return Array.from({ length }, () => randomInt(0, 255));
+}
+
+function chunkNumbers(numbers, perLine = 16, numericArmor = false) {
   const lines = [];
   for (let i = 0; i < numbers.length; i += perLine) {
-    lines.push(numbers.slice(i, i + perLine).join(","));
+    lines.push(
+      numbers
+        .slice(i, i + perLine)
+        .map((value) => luaNumber(value, numericArmor, 0.18))
+        .join(","),
+    );
   }
   return lines.join(",\n");
 }
 
 function splitBytes(bytes, preset) {
-  const ranges = {
-    compact: [54, 88],
-    balanced: [28, 52],
-    heavy: [12, 26],
-  };
-  const [min, max] = ranges[preset] || ranges.balanced;
+  const [min, max] = presetProfile(preset).chunkRange;
   const chunks = [];
   let cursor = 0;
 
@@ -324,20 +429,75 @@ function splitBytes(bytes, preset) {
   return chunks;
 }
 
+function decoyChunkBytes(preset) {
+  const [min, max] = presetProfile(preset).chunkRange;
+  const fakeSnippets = [
+    "local _=function(...) return ... end",
+    "return function() return nil end",
+    "if false then error('tamper') end",
+    "local function _0x() return tostring({}) end",
+  ];
+
+  if (Math.random() > 0.42) {
+    return [...encoder.encode(fakeSnippets[randomInt(0, fakeSnippets.length - 1)])];
+  }
+
+  return randomBytes(randomInt(min, Math.max(min, max * 2)));
+}
+
+function addDecoyChunks(realChunks, preset) {
+  const profile = presetProfile(preset);
+  const ratio = profile.decoyRatio || 0;
+
+  if (ratio <= 0 || realChunks.length === 0) return realChunks;
+
+  const decoyCount = Math.min(240, Math.ceil(realChunks.length * ratio) + randomInt(1, 5));
+  const decoys = Array.from({ length: decoyCount }, () => encodeChunk(decoyChunkBytes(preset)));
+
+  return realChunks.concat(decoys);
+}
+
 function encodeChunk(bytes) {
   const salt = randomInt(7, 251);
   const key = randomInt(1, 255);
+  const multiplier = randomOddByte();
+  const inverse = modInverse256(multiplier);
+  const twist = randomInt(11, 253);
+  const phase = randomInt(17, 251);
+  const slope = randomInt(3, 97);
   const keyMask = randomInt(300, 1200);
   const keyA = keyMask + key;
   const keyB = keyMask;
-  const encoded = [];
-  let previous = (salt * 3 + key) % 256;
+  const inverseMask = randomInt(700, 1600);
+  const inverseA = inverseMask + inverse;
+  const inverseB = inverseMask;
+  const twistMask = randomInt(500, 1500);
+  const twistA = twistMask + twist;
+  const twistB = twistMask;
+  const phaseMask = randomInt(900, 1900);
+  const phaseA = phaseMask + phase;
+  const phaseB = phaseMask;
+  const slopeMask = randomInt(1100, 2200);
+  const slopeA = slopeMask + slope;
+  const slopeB = slopeMask;
+  const logical = [];
+  let previous = (salt * 5 + key + twist + phase) % 256;
 
   bytes.forEach((byte, index) => {
-    const roll = (((index + 1) * salt) % 256);
-    const value = (byte + key + roll + previous) % 256;
-    encoded.push(value);
+    const position = index + 1;
+    const roll = (position * salt + (position % 7) * twist + previous + position * phase) % 256;
+    const extra = (phase + index * slope) % 256;
+    const value = (byte * multiplier + key + roll + previous + twist + extra) % 256;
+    logical.push(value);
     previous = value;
+  });
+
+  const stride = randomStride(logical.length);
+  const offset = logical.length > 1 ? randomInt(0, logical.length - 1) : 0;
+  const encoded = [];
+
+  logical.forEach((value, index) => {
+    encoded[(index * stride + offset) % logical.length] = value;
   });
 
   return {
@@ -345,11 +505,21 @@ function encodeChunk(bytes) {
     salt,
     keyA,
     keyB,
-    checksum: checksumNumbers(encoded, salt),
+    checksum: checksumNumbers(encoded, (salt + twist + inverse + phase + slope) % 65535),
+    inverseA,
+    inverseB,
+    twistA,
+    twistB,
+    stride,
+    offset,
+    phaseA,
+    phaseB,
+    slopeA,
+    slopeB,
   };
 }
 
-function buildRuntimeStringTable(perLine) {
+function buildRuntimeStringTable(perLine, numericArmor) {
   const values = [
     "debug",
     "gethook",
@@ -400,12 +570,29 @@ function buildRuntimeStringTable(perLine) {
 
   return {
     indexes,
-    lua: records.map((record) => luaRecord(record, perLine)).join(",\n"),
+    lua: records.map((record) => luaRecord(record, perLine, numericArmor)).join(",\n"),
   };
 }
 
-function luaRecord(chunk, perLine) {
-  return `{{${chunkNumbers(chunk.encoded, perLine)}},${chunk.salt},${chunk.keyA},${chunk.keyB},${chunk.checksum}}`;
+function luaRecord(chunk, perLine, numericArmor = false) {
+  const fields = [
+    chunk.salt,
+    chunk.keyA,
+    chunk.keyB,
+    chunk.checksum,
+    chunk.inverseA,
+    chunk.inverseB,
+    chunk.twistA,
+    chunk.twistB,
+    chunk.stride,
+    chunk.offset,
+    chunk.phaseA,
+    chunk.phaseB,
+    chunk.slopeA,
+    chunk.slopeB,
+  ].map((value) => luaNumber(value, numericArmor));
+
+  return `{{${chunkNumbers(chunk.encoded, perLine, numericArmor)}},${fields.join(",")}}`;
 }
 
 function vmInstruction(record, index, mask, seed) {
@@ -414,21 +601,28 @@ function vmInstruction(record, index, mask, seed) {
   return `{${(opcode + salt + index + mask + seed) % 256},${a},${b},${c},${salt}}`;
 }
 
-function buildVmProgram(chunkCount, opcodes, mask) {
+function buildVmProgram(chunkCount, opcodes, mask, phantomRatio = 0) {
   const records = [];
   const guard = randomInt(4000, 9000);
 
   records.push([opcodes.check, guard, guard]);
+  records.push([opcodes.lock, guard + mask, guard + mask]);
+  records.push([opcodes.drift, randomInt(40, 220), randomInt(40, 220)]);
   for (let i = 1; i <= chunkCount; i += 1) {
     if (i % 5 === 0) records.push([opcodes.probe, guard + i, guard + i]);
     if (i % 2 === 1) records.push([opcodes.junk, randomInt(30, 220), randomInt(30, 220)]);
     if (i % 2 === 0) records.push([opcodes.noise, randomInt(10, 99), randomInt(10, 99)]);
     if (i % 3 === 1) records.push([opcodes.mix, randomInt(20, 240), randomInt(20, 240)]);
+    if (i % 4 === 1) records.push([opcodes.weave, randomInt(20, 240), randomInt(20, 240)]);
+    if (i % 6 === 0) records.push([opcodes.gate, guard + i + mask, guard + i + mask]);
     records.push([opcodes.part, i, randomInt(1, 255)]);
     if (i % 4 === 0) records.push([opcodes.junk, randomInt(30, 220), randomInt(30, 220)]);
     if (i % 4 === 2) records.push([opcodes.shadow, randomInt(20, 240), randomInt(20, 240)]);
+    if (i % 5 === 2) records.push([opcodes.drift, randomInt(40, 220), randomInt(40, 220)]);
     if (i % 3 === 0) records.push([opcodes.check, guard + i, guard + i]);
   }
+  records.push([opcodes.weave, randomInt(30, 230), randomInt(30, 230)]);
+  records.push([opcodes.gate, guard + chunkCount + mask, guard + chunkCount + mask]);
   records.push([opcodes.exec, guard]);
   const nodes = shuffle(records.map((record, index) => ({ record, logical: index + 1 })));
   const positionByLogical = {};
@@ -439,6 +633,17 @@ function buildVmProgram(chunkCount, opcodes, mask) {
     const next = positionByLogical[node.logical + 1] || 0;
     return [node.record[0], node.record[1], node.record[2], next];
   });
+  const opcodePool = Object.values(opcodes);
+  const phantomCount = Math.max(0, Math.floor(physicalRecords.length * phantomRatio));
+
+  for (let i = 0; i < phantomCount; i += 1) {
+    const opcode = opcodePool[randomInt(0, opcodePool.length - 1)];
+    const a = randomInt(1, 65535);
+    const b = Math.random() > 0.35 ? a : randomInt(1, 65535);
+    const next = randomInt(1, Math.max(1, physicalRecords.length));
+    physicalRecords.push([opcode, a, b, next]);
+  }
+
   const seed = (guard + physicalRecords.length + mask + chunkCount) % 256;
 
   return {
@@ -450,9 +655,9 @@ function buildVmProgram(chunkCount, opcodes, mask) {
   };
 }
 
-function buildWatermark(perLine) {
-  const text = `CL3-${Date.now().toString(36)}-${randomInt(100000, 999999).toString(36)}`;
-  return luaRecord(encodeChunk([...encoder.encode(text)]), perLine);
+function buildWatermark(perLine, numericArmor) {
+  const text = `CLG-${Date.now().toString(36)}-${randomInt(100000, 999999).toString(36)}`;
+  return luaRecord(encodeChunk([...encoder.encode(text)]), perLine, numericArmor);
 }
 
 function wrapControlFlow(source) {
@@ -472,26 +677,52 @@ function wrapControlFlow(source) {
   ].join("\n");
 }
 
-function encodeLua(source, preset, compatible, robloxMode) {
-  const names = randomNames(112);
+function armoredSource(source, preset, compatible, robloxMode) {
+  const profile = presetProfile(preset);
+  let stage = wrapControlFlow(minifyLua(source));
+
+  for (let layer = 0; layer < profile.layers; layer += 1) {
+    const stagePreset = layer === 0 ? preset : "compact";
+    const stageArmor = profile.numericArmor && (preset === "god" || layer === 0);
+    stage = encodeLua(stage, stagePreset, compatible, robloxMode, {
+      numericArmor: stageArmor,
+    });
+
+    if (layer < profile.layers - 1) {
+      stage = wrapControlFlow(minifyLua(stage));
+    }
+  }
+
+  return stage;
+}
+
+function encodeLua(source, preset, compatible, robloxMode, options = {}) {
+  const profile = presetProfile(preset);
+  const numericArmor = options.numericArmor ?? profile.numericArmor;
+  const names = randomNames(132);
   const bytes = [...encoder.encode(source)];
   const chunks = splitBytes(bytes, preset).map(encodeChunk);
-  const perLine = preset === "compact" ? 24 : preset === "heavy" ? 10 : 16;
-  const payload = chunks.map((chunk) => luaRecord(chunk, perLine)).join(",\n");
-  const stringTable = buildRuntimeStringTable(perLine);
-  const watermark = buildWatermark(perLine);
+  const payloadChunks = addDecoyChunks(chunks, preset);
+  const perLine = profile.perLine;
+  const payload = payloadChunks.map((chunk) => luaRecord(chunk, perLine, numericArmor)).join(",\n");
+  const stringTable = buildRuntimeStringTable(perLine, numericArmor);
+  const watermark = buildWatermark(perLine, numericArmor);
   const guard = randomInt(1000, 9000);
   const opaqueA = randomInt(11, 99);
   const opaqueB = opaqueA * 2;
   const opcodeValues = shuffle([
-    randomInt(9, 39),
-    randomInt(41, 89),
-    randomInt(91, 139),
-    randomInt(141, 169),
-    randomInt(171, 199),
-    randomInt(201, 219),
-    randomInt(221, 239),
-    randomInt(241, 252),
+    randomInt(7, 24),
+    randomInt(26, 43),
+    randomInt(45, 62),
+    randomInt(64, 83),
+    randomInt(85, 104),
+    randomInt(106, 125),
+    randomInt(127, 146),
+    randomInt(148, 167),
+    randomInt(169, 188),
+    randomInt(190, 209),
+    randomInt(211, 230),
+    randomInt(232, 252),
   ]);
   const opcodes = {
     part: opcodeValues[0],
@@ -502,9 +733,13 @@ function encodeLua(source, preset, compatible, robloxMode) {
     mix: opcodeValues[5],
     probe: opcodeValues[6],
     shadow: opcodeValues[7],
+    gate: opcodeValues[8],
+    drift: opcodeValues[9],
+    lock: opcodeValues[10],
+    weave: opcodeValues[11],
   };
   const instructionMask = randomInt(17, 231);
-  const program = buildVmProgram(chunks.length, opcodes, instructionMask);
+  const program = buildVmProgram(chunks.length, opcodes, instructionMask, profile.phantomRatio || 0);
   const loadPrimary = robloxMode || compatible ? stringTable.indexes.loadstring : stringTable.indexes.load;
   const loadFallback = robloxMode || compatible ? stringTable.indexes.load : stringTable.indexes.loadstring;
   const environmentExpr = robloxMode
@@ -515,7 +750,7 @@ function encodeLua(source, preset, compatible, robloxMode) {
     : `for ${names[72]}=1,#${names[71]} do local ${names[73]}=${names[37]}(${names[71]}[${names[72]}]);if ${names[35]}[${names[73]}]~=nil then return false end end`;
 
   const noise =
-    preset === "heavy"
+    preset === "heavy" || preset === "god"
       ? [
           `local ${names[44]}=${randomInt(31, 99)}`,
           `local ${names[45]}=function(${names[46]}) return (${names[46]}*${names[44]})%257 end`,
@@ -537,6 +772,10 @@ function encodeLua(source, preset, compatible, robloxMode) {
     `local ${names[78]}=${opcodes.mix}`,
     `local ${names[79]}=${opcodes.probe}`,
     `local ${names[80]}=${opcodes.shadow}`,
+    `local ${names[90]}=${opcodes.gate}`,
+    `local ${names[91]}=${opcodes.drift}`,
+    `local ${names[92]}=${opcodes.lock}`,
+    `local ${names[93]}=${opcodes.weave}`,
     `local ${names[1]}={`,
     payload,
     `}`,
@@ -555,15 +794,25 @@ function encodeLua(source, preset, compatible, robloxMode) {
     `local ${names[8]}=${names[7]}[1]`,
     `local ${names[9]}=${names[7]}[2]`,
     `local ${names[10]}=(${names[7]}[3]-${names[7]}[4])%256`,
+    `local ${names[94]}=(${names[7]}[6]-${names[7]}[7])%256`,
+    `local ${names[95]}=(${names[7]}[8]-${names[7]}[9])%256`,
+    `local ${names[96]}=${names[7]}[10] or 1`,
+    `local ${names[97]}=${names[7]}[11] or 0`,
+    `local ${names[103]}=((${names[7]}[12] or 0)-(${names[7]}[13] or 0))%256`,
+    `local ${names[104]}=((${names[7]}[14] or 0)-(${names[7]}[15] or 0))%256`,
+    `local ${names[98]}=(${names[9]}+${names[94]}+${names[95]}+${names[103]}+${names[104]})%65535`,
     `local ${names[11]}=0`,
-    `for ${names[12]}=1,#${names[8]} do ${names[11]}=(${names[11]}+${names[8]}[${names[12]}]*(${names[12]}+${names[9]})+${names[9]})%65535 end`,
+    `for ${names[12]}=1,#${names[8]} do ${names[11]}=(${names[11]}+${names[8]}[${names[12]}]*(${names[12]}+${names[98]})+${names[98]})%65535 end`,
     `if ${names[11]}~=${names[7]}[5] then error("integrity failure") end`,
-    `local ${names[13]}=(${names[9]}*3+${names[10]})%256`,
+    `local ${names[13]}=(${names[9]}*5+${names[10]}+${names[95]}+${names[103]})%256`,
     `local ${names[14]}={}`,
     `local ${names[15]}=(function() local ${names[84]}=#tostring({})+${opaqueA};return (((${names[84]}*${names[84]}+${names[84]})%2)==0) and (${opaqueB}/${opaqueA}>1) end)()`,
     `for ${names[12]}=1,#${names[8]} do`,
-    `local ${names[16]}=${names[8]}[${names[12]}]`,
-    `if ${names[15]} then ${names[14]}[${names[12]}]=${names[2]}((${names[16]}-${names[10]}-((${names[12]}*${names[9]})%256)-${names[13]})%256) else error("runtime blocked") end`,
+    `local ${names[99]}=(((${names[12]}-1)*${names[96]}+${names[97]})%#${names[8]})+1`,
+    `local ${names[16]}=${names[8]}[${names[99]}]`,
+    `local ${names[100]}=(${names[12]}*${names[9]}+(${names[12]}%7)*${names[95]}+${names[13]}+${names[12]}*${names[103]})%256`,
+    `local ${names[105]}=(${names[103]}+(${names[12]}-1)*${names[104]})%256`,
+    `if ${names[15]} then ${names[14]}[${names[12]}]=${names[2]}(((${names[16]}-${names[10]}-${names[100]}-${names[13]}-${names[95]}-${names[105]})%256*${names[94]})%256) else error("runtime blocked") end`,
     `${names[13]}=${names[16]}`,
     "end",
     `return ${names[3]}(${names[14]})`,
@@ -615,6 +864,10 @@ function encodeLua(source, preset, compatible, robloxMode) {
     `${names[63]}[(${names[78]}+${names[74]})%256]=function(${names[31]}) local ${names[81]}=(${names[31]}[2]+${names[31]}[3]+${names[24]}.${names[27]})%256;${names[24]}.${names[75]}=(${names[24]}.${names[75]}+${names[81]}-${names[81]})%65535;${names[24]}.${names[26]}=${names[31]}[4] end`,
     `${names[63]}[(${names[79]}+${names[74]})%256]=function(${names[31]}) if ((${names[31]}[2]-${names[31]}[3])%1)~=0 then ${names[40]}(${names[37]}(${stringTable.indexes["integrity failure"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end`,
     `${names[63]}[(${names[80]}+${names[74]})%256]=function(${names[31]}) local ${names[82]}=tostring(${names[31]}[2]*${names[31]}[3]);if #${names[82]}<1 then ${names[40]}(${names[37]}(${stringTable.indexes["runtime blocked"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end`,
+    `${names[63]}[(${names[90]}+${names[74]})%256]=function(${names[31]}) if ${names[31]}[2]~=${names[31]}[3] then ${names[40]}(${names[37]}(${stringTable.indexes["integrity failure"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end`,
+    `${names[63]}[(${names[91]}+${names[74]})%256]=function(${names[31]}) local ${names[101]}=(${names[31]}[2]*31+${names[31]}[3]*17+${names[24]}.${names[27]})%65535;${names[24]}.${names[27]}=(${names[24]}.${names[27]}+${names[101]})%65535;${names[24]}.${names[26]}=${names[31]}[4] end`,
+    `${names[63]}[(${names[92]}+${names[74]})%256]=function(${names[31]}) if ((${names[31]}[2]-${names[31]}[3])+(${names[31]}[3]-${names[31]}[2]))~=0 then ${names[40]}(${names[37]}(${stringTable.indexes["runtime blocked"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end`,
+    `${names[63]}[(${names[93]}+${names[74]})%256]=function(${names[31]}) local ${names[102]}=(${names[31]}[2]*${names[31]}[3]+${names[24]}.${names[75]}+#${names[24]}.${names[25]})%257;${names[24]}.${names[75]}=(${names[24]}.${names[75]}+${names[102]}-${names[102]})%65535;${names[24]}.${names[26]}=${names[31]}[4] end`,
     `${names[63]}[(${names[20]}+${names[74]})%256]=function() ${names[24]}.${names[26]}=0 end`,
     `local function ${names[17]}()`,
     `while ${names[24]}.${names[26]} and ${names[24]}.${names[26]}>0 and ${names[24]}.${names[26]}<=#${names[23]} do`,
@@ -636,7 +889,107 @@ function encodeLua(source, preset, compatible, robloxMode) {
 
 function addBanner(source) {
   if (!bannerToggle.checked) return source;
-  return `-- CoolLight v3\n-- VM Pack + Dynamic Key Lua Protection\n${source}`;
+  return [
+    "-- CoolLight Nightmare VM",
+    "-- Triple-layer VM Pack + Rolling Cipher + Poison Payload Lua Protection",
+    "",
+    source,
+  ].join("\n");
+}
+
+function longBracketEnd(source, index) {
+  const info = longBracketInfo(source, index);
+  if (!info) return -1;
+  const start = index + info.openLength;
+  const end = source.indexOf(info.close, start);
+  return end === -1 ? source.length : end + info.close.length;
+}
+
+function luaTokenChar(char) {
+  return /[A-Za-z0-9_]/.test(char);
+}
+
+function compactNeedsSpace(previous, next) {
+  if (!previous || !next) return false;
+  if (luaTokenChar(previous) && luaTokenChar(next)) return true;
+  if (previous === "-" && next === "-") return true;
+  return false;
+}
+
+function compactLua(source) {
+  let output = "";
+  let pendingSpace = false;
+  let i = 0;
+
+  while (i < source.length) {
+    const char = source[i];
+    const next = source[i + 1];
+
+    if (/\s/.test(char)) {
+      pendingSpace = true;
+      i += 1;
+      continue;
+    }
+
+    if (char === "-" && next === "-") {
+      const blockEnd = longBracketEnd(source, i + 2);
+      if (blockEnd !== -1) {
+        i = blockEnd;
+      } else {
+        const lineEnd = source.indexOf("\n", i + 2);
+        i = lineEnd === -1 ? source.length : lineEnd + 1;
+      }
+      pendingSpace = true;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      const previous = output[output.length - 1];
+      if (pendingSpace && compactNeedsSpace(previous, char)) output += " ";
+      pendingSpace = false;
+
+      const quote = char;
+      output += char;
+      i += 1;
+      while (i < source.length) {
+        output += source[i];
+        if (source[i] === "\\") {
+          i += 1;
+          if (i < source.length) output += source[i];
+        } else if (source[i] === quote) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+
+    if (char === "[") {
+      const end = longBracketEnd(source, i);
+      if (end !== -1) {
+        const previous = output[output.length - 1];
+        if (pendingSpace && compactNeedsSpace(previous, char)) output += " ";
+        output += source.slice(i, end);
+        pendingSpace = false;
+        i = end;
+        continue;
+      }
+    }
+
+    const previous = output[output.length - 1];
+    if (pendingSpace && compactNeedsSpace(previous, char)) output += " ";
+    output += char;
+    pendingSpace = false;
+    i += 1;
+  }
+
+  return output.trim();
+}
+
+function formatGeneratedLua(source) {
+  const compact = compactLua(source);
+  return `return(function()${compact}end)()`;
 }
 
 function obfuscate() {
@@ -650,8 +1003,9 @@ function obfuscate() {
 
   try {
     const preset = presetSelect.value;
-    const base = wrapControlFlow(minifyLua(source));
-    const result = encodeLua(base, preset, compatToggle.checked, robloxToggle.checked);
+    const result = formatGeneratedLua(
+      armoredSource(source, preset, compatToggle.checked, robloxToggle.checked),
+    );
 
     outputCode.value = addBanner(result);
     setStatus("done");
@@ -699,7 +1053,7 @@ function downloadOutput() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "coollight-v3-obfuscated.lua";
+  link.download = "coollight-nightmare-vm-obfuscated.lua";
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -782,5 +1136,6 @@ window.addEventListener("resize", () => {
 resizeCanvas();
 resetParticles();
 drawSignal();
+installGodPreset();
 applyLanguage(currentLanguage);
 updateStats();
