@@ -3,8 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111318" />
     <title>CoolLight v3</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <canvas id="signalCanvas" aria-hidden="true"></canvas>
@@ -12,7 +13,7 @@
     <main class="app-shell">
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark">CL</span>
+          <span class="brand-mark">CL3</span>
           <div>
             <p class="eyebrow">Lua Protection Suite</p>
             <h1>CoolLight v3</h1>
@@ -34,8 +35,8 @@
         <aside class="control-panel" aria-label="Pengaturan obfuscator">
           <div class="process-card" aria-label="Proses obfuscate aktif">
             <span class="process-kicker" data-i18n="processKicker">Proses tetap</span>
-            <strong>VM Pack + Dynamic Keys</strong>
-            <p data-i18n="processDescription">Kode Lua dipadatkan ke VM state-machine acak dengan dynamic key, string decrypt on-demand, dan mode Roblox/Luau.</p>
+            <strong>Nightmare VM Shield</strong>
+            <p data-i18n="processDescription">Kode Lua dipadatkan ke triple-layer VM acak dengan rolling cipher, poison chunks, phantom opcodes, string decrypt on-demand, dan mode Roblox/Luau.</p>
             <div class="protection-list">
               <span>VM</span>
               <span>Dynamic Keys</span>
@@ -44,6 +45,9 @@
               <span>Junk Ops</span>
               <span>Anti-Hook</span>
               <span>Mutation</span>
+              <span>Poison Chunks</span>
+              <span>Phantom Ops</span>
+              <span>Rolling Cipher</span>
               <span>Luau</span>
               <span>Watermark</span>
             </div>
@@ -55,6 +59,7 @@
               <option value="balanced" selected>Gold Balanced</option>
               <option value="compact">Pearl Compact</option>
               <option value="heavy">Royal Heavy</option>
+              <option value="god">Luraph Nightmare VM</option>
             </select>
           </div>
 
@@ -115,7 +120,7 @@
 
           <div class="editor-panel output-panel">
             <div class="editor-header">
-              <h2 data-i18n="outputTitle">Hasil CoolLight v3</h2>
+              <h2 data-i18n="outputTitle">Hasil CoolLight Nightmare VM</h2>
               <div class="inline-actions">
                 <button id="copyBtn" type="button" data-i18n="copyButton">Salin</button>
                 <button id="downloadBtn" type="button" data-i18n="downloadButton">Unduh</button>
@@ -126,7 +131,7 @@
               spellcheck="false"
               readonly
               data-i18n-placeholder="outputPlaceholder"
-              placeholder="Hasil CoolLight v3 akan muncul di sini..."
+              placeholder="Hasil CoolLight Nightmare VM akan muncul di sini..."
             ></textarea>
           </div>
         </section>
