@@ -1,30 +1,32 @@
-const inputCode = document.querySelector("#inputCode");
-const outputCode = document.querySelector("#outputCode");
-const languageSelect = document.querySelector("#languageSelect");
-const presetSelect = document.querySelector("#presetSelect");
-const compatToggle = document.querySelector("#compatToggle");
-const robloxToggle = document.querySelector("#robloxToggle");
-const bannerToggle = document.querySelector("#bannerToggle");
-const obfuscateBtn = document.querySelector("#obfuscateBtn");
-const sampleBtn = document.querySelector("#sampleBtn");
-const clearBtn = document.querySelector("#clearBtn");
-const pasteBtn = document.querySelector("#pasteBtn");
-const copyBtn = document.querySelector("#copyBtn");
-const downloadBtn = document.querySelector("#downloadBtn");
-const statusPill = document.querySelector("#statusPill");
-const inputBytes = document.querySelector("#inputBytes");
-const outputBytes = document.querySelector("#outputBytes");
-const ratioValue = document.querySelector("#ratioValue");
-const lineCount = document.querySelector("#lineCount");
-const canvas = document.querySelector("#signalCanvas");
-const ctx = canvas.getContext("2d");
+const hasDOM = typeof document !== "undefined";
+const inputCode = hasDOM ? document.querySelector("#inputCode") : null;
+const outputCode = hasDOM ? document.querySelector("#outputCode") : null;
+const languageSelect = hasDOM ? document.querySelector("#languageSelect") : null;
+const presetSelect = hasDOM ? document.querySelector("#presetSelect") : null;
+const compatToggle = hasDOM ? document.querySelector("#compatToggle") : null;
+const robloxToggle = hasDOM ? document.querySelector("#robloxToggle") : null;
+const bannerToggle = hasDOM ? document.querySelector("#bannerToggle") : null;
+const obfuscateBtn = hasDOM ? document.querySelector("#obfuscateBtn") : null;
+const sampleBtn = hasDOM ? document.querySelector("#sampleBtn") : null;
+const clearBtn = hasDOM ? document.querySelector("#clearBtn") : null;
+const pasteBtn = hasDOM ? document.querySelector("#pasteBtn") : null;
+const copyBtn = hasDOM ? document.querySelector("#copyBtn") : null;
+const downloadBtn = hasDOM ? document.querySelector("#downloadBtn") : null;
+const previewPill = hasDOM ? document.querySelector("#previewPill") : null;
+const statusPill = hasDOM ? document.querySelector("#statusPill") : null;
+const inputBytes = hasDOM ? document.querySelector("#inputBytes") : null;
+const outputBytes = hasDOM ? document.querySelector("#outputBytes") : null;
+const ratioValue = hasDOM ? document.querySelector("#ratioValue") : null;
+const lineCount = hasDOM ? document.querySelector("#lineCount") : null;
+const canvas = hasDOM ? document.querySelector("#signalCanvas") : null;
+const ctx = canvas ? canvas.getContext("2d") : null;
 
 const translations = {
   id: {
     languageLabel: "Bahasa",
     ready: "Siap",
     processKicker: "Proses tetap",
-    processDescription: "Kode Lua dipadatkan ke triple-layer VM acak dengan rolling cipher, poison chunks, phantom opcodes, string decrypt on-demand, dan mode Roblox/Luau.",
+    processDescription: "Kode Lua dipadatkan ke register-based VM acak dengan opcode polymorphism, instruction mutation, nested dispatch VM, dynamic handler switching, rolling cipher, dan anti-memory dump cleanup.",
     presetLabel: "Level kilau",
     compatLabel: "Loader Lua 5.1+",
     robloxLabel: "Mode Roblox/Luau",
@@ -42,6 +44,12 @@ const translations = {
     downloadButton: "Unduh",
     outputPlaceholder: "Hasil CoolLight Nightmare VM akan muncul di sini...",
     emptyInput: "Masukkan kode Lua",
+    processing: "Memproses di background",
+    encodingStrings: "Encode string table",
+    encodingPayload: "Encode payload",
+    buildingVm: "Bangun VM",
+    generatingOutput: "Generate output",
+    tooLargeForPreset: "Kode terlalu besar untuk preset ini",
     done: "CoolLight Nightmare VM selesai",
     failed: "Gagal memproses kode",
     noOutput: "Belum ada hasil",
@@ -56,7 +64,7 @@ const translations = {
     languageLabel: "Language",
     ready: "Ready",
     processKicker: "Fixed process",
-    processDescription: "Lua code is packed into a randomized triple-layer VM with rolling ciphers, poison chunks, phantom opcodes, on-demand string decrypt, and Roblox/Luau mode.",
+    processDescription: "Lua code is packed into a randomized register-based VM with opcode polymorphism, instruction mutation, nested dispatch VM, dynamic handler switching, rolling ciphers, and anti-memory-dump cleanup.",
     presetLabel: "Shine level",
     compatLabel: "Lua 5.1+ loader",
     robloxLabel: "Roblox/Luau mode",
@@ -74,6 +82,12 @@ const translations = {
     downloadButton: "Download",
     outputPlaceholder: "CoolLight Nightmare VM output will appear here...",
     emptyInput: "Enter Lua code",
+    processing: "Processing in background",
+    encodingStrings: "Encoding string table",
+    encodingPayload: "Encoding payload",
+    buildingVm: "Building VM",
+    generatingOutput: "Generating output",
+    tooLargeForPreset: "Code is too large for this preset",
     done: "CoolLight Nightmare VM complete",
     failed: "Failed to process code",
     noOutput: "No output yet",
@@ -89,6 +103,21 @@ const translations = {
 let currentLanguage = "id";
 let currentStatusKey = "ready";
 let currentStatusType = "ok";
+let fullOutputValue = "";
+let obfuscationWorker = null;
+let obfuscationJob = 0;
+let workerBusy = false;
+
+const OUTPUT_PREVIEW_HEAD = 90000;
+const OUTPUT_PREVIEW_TAIL = 12000;
+const OUTPUT_PREVIEW_LIMIT = OUTPUT_PREVIEW_HEAD + OUTPUT_PREVIEW_TAIL;
+
+const PRESET_LIMITS = {
+  compact: 2000000,
+  balanced: 1000000,
+  heavy: 500000,
+  god: 200000,
+};
 
 const SAMPLE_CODE = `-- contoh Lua
 local playerName = "Nara"
@@ -106,6 +135,7 @@ end
 print("Total:", coins)`;
 
 const encoder = new TextEncoder();
+const runtimeStringTableCache = new Map();
 
 const PRESET_PROFILES = {
   compact: {
@@ -168,6 +198,13 @@ function setStatus(key, type = "ok") {
   statusPill.classList.toggle("error", type === "error");
 }
 
+function setProgressStatus(key, progress = 0) {
+  currentStatusKey = "processing";
+  currentStatusType = "ok";
+  statusPill.textContent = `${translate(key)} ${Math.max(0, Math.min(99, Math.round(progress)))}%`;
+  statusPill.classList.remove("error");
+}
+
 function applyLanguage(language) {
   currentLanguage = language;
   document.documentElement.lang = language;
@@ -197,9 +234,48 @@ function formatBytes(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
+function currentOutputValue() {
+  return fullOutputValue || outputCode.value;
+}
+
+function previewOutput(value) {
+  if (value.length <= OUTPUT_PREVIEW_LIMIT) return value;
+
+  const hidden = value.length - OUTPUT_PREVIEW_HEAD - OUTPUT_PREVIEW_TAIL;
+  return [
+    value.slice(0, OUTPUT_PREVIEW_HEAD),
+    "",
+    `-- [[ Preview dipotong supaya browser tetap ringan. ${hidden.toLocaleString()} karakter disembunyikan di tampilan ini. Salin/Unduh tetap memakai output full: ${formatBytes(byteLength(value))}. ]]`,
+    "",
+    value.slice(-OUTPUT_PREVIEW_TAIL),
+  ].join("\n");
+}
+
+function setOutputValue(value, options = {}) {
+  const isPreview = value.length > OUTPUT_PREVIEW_LIMIT && !options.error;
+  fullOutputValue = options.error ? "" : value;
+  outputCode.value = isPreview ? previewOutput(value) : value;
+  outputCode.classList.toggle("is-preview", isPreview);
+
+  if (previewPill) {
+    previewPill.hidden = !isPreview;
+    previewPill.textContent = isPreview ? `Preview ${formatBytes(byteLength(value))}` : "Preview";
+  }
+
+  updateStats();
+}
+
+function clearOutputValue() {
+  fullOutputValue = "";
+  outputCode.value = "";
+  outputCode.classList.remove("is-preview");
+  if (previewPill) previewPill.hidden = true;
+  updateStats();
+}
+
 function updateStats() {
   const inputSize = byteLength(inputCode.value);
-  const outputSize = byteLength(outputCode.value);
+  const outputSize = byteLength(currentOutputValue());
   const lines = inputCode.value ? inputCode.value.split(/\r\n|\r|\n/).length : 0;
   const ratio = inputSize ? Math.round((outputSize / inputSize) * 100) : 0;
 
@@ -375,12 +451,15 @@ function luaNumber(value, armored = false, chance = 1) {
 
   const pad = randomInt(9, 91);
   const scale = randomInt(2, 9);
-  const style = randomInt(0, 3);
+  const mask = randomInt(37, 199);
+  const style = randomInt(0, 5);
 
   if (style === 0) return `(${value + pad}-${pad})`;
   if (style === 1) return `((${value * scale})/${scale})`;
   if (style === 2) return `(${value + pad + scale}-${pad}-${scale})`;
-  return `(((${value + pad})-${scale})-(${pad}-${scale}))`;
+  if (style === 3) return `(((${value + pad})-${scale})-(${pad}-${scale}))`;
+  if (style === 4) return `(((${value + mask})%${mask})+${Math.floor(value / mask) * mask})`;
+  return `(((${value + pad})*${scale}-${pad * scale})/${scale})`;
 }
 
 function shuffle(items) {
@@ -520,6 +599,9 @@ function encodeChunk(bytes) {
 }
 
 function buildRuntimeStringTable(perLine, numericArmor) {
+  const cacheKey = `${perLine}:${numericArmor ? 1 : 0}`;
+  if (runtimeStringTableCache.has(cacheKey)) return runtimeStringTableCache.get(cacheKey);
+
   const values = [
     "debug",
     "gethook",
@@ -564,14 +646,21 @@ function buildRuntimeStringTable(perLine, numericArmor) {
     "spawn",
     "wait",
     "loadstring unavailable",
+    "debug detected",
+    "invalid env",
+    "sandbox",
+    "blocked",
   ];
   const indexes = Object.fromEntries(values.map((value, index) => [value, index + 1]));
   const records = values.map((value) => encodeChunk([...encoder.encode(value)]));
 
-  return {
+  const table = {
     indexes,
     lua: records.map((record) => luaRecord(record, perLine, numericArmor)).join(",\n"),
   };
+
+  runtimeStringTableCache.set(cacheKey, table);
+  return table;
 }
 
 function luaRecord(chunk, perLine, numericArmor = false) {
@@ -595,35 +684,123 @@ function luaRecord(chunk, perLine, numericArmor = false) {
   return `{{${chunkNumbers(chunk.encoded, perLine, numericArmor)}},${fields.join(",")}}`;
 }
 
+function randomOpcodeValues(count) {
+  const values = new Set();
+  while (values.size < count) {
+    values.add(randomInt(7, 252));
+  }
+  return shuffle([...values]);
+}
+
+function mutateOpcodes(opcodes, seed) {
+  const mutated = {};
+  const offset = (seed + Math.floor(seed / 7) + (seed % 13)) % 256;
+
+  Object.entries(opcodes).forEach(([key, values]) => {
+    mutated[key] = values.map((value) => {
+      return 7 + ((value - 7 + offset) % 246);
+    });
+  });
+
+  return mutated;
+}
+
+function opcodePick(value) {
+  if (Array.isArray(value)) return value[randomInt(0, value.length - 1)];
+  return value;
+}
+
+function luaOpcodeSet(values) {
+  const list = Array.isArray(values) ? values : [values];
+  return `{${list.join(",")}}`;
+}
+
+function injectDeadInstructions(records, opcodes, ratio = 0.15) {
+  const deadPools = [opcodes.junk, opcodes.noise, opcodes.shadow, opcodes.weave];
+  const count = Math.floor(records.length * ratio);
+
+  for (let i = 0; i < count; i += 1) {
+    const pool = deadPools[randomInt(0, deadPools.length - 1)];
+    const pos = randomInt(0, Math.max(0, records.length - 1));
+    records.splice(pos, 0, [
+      opcodePick(pool),
+      randomInt(1, 65535),
+      randomInt(1, 65535),
+      0,
+    ]);
+  }
+
+  return records;
+}
+
+function garbageStatement() {
+  const variants = [
+    `local ${randomName()}=#tostring({})`,
+    `local ${randomName()}=({})[1]`,
+    `do local ${randomName()}=0 end`,
+    `if false then local ${randomName()}=nil end`,
+  ];
+  return variants[randomInt(0, variants.length - 1)];
+}
+
+function garbageSprayLines(lines, density = 0.12) {
+  const result = [];
+  let tableDepth = 0;
+
+  lines.forEach((line) => {
+    const trimmed = String(line).trim();
+    result.push(line);
+
+    if (trimmed.endsWith("{")) tableDepth += 1;
+    if (trimmed === "}" || trimmed === "},") tableDepth = Math.max(0, tableDepth - 1);
+
+    const unsafe =
+      tableDepth > 0 ||
+      !trimmed ||
+      /^return\b/.test(trimmed) ||
+      trimmed === "end" ||
+      trimmed === "else" ||
+      /\bthen$|\bdo$/.test(trimmed);
+
+    if (!unsafe && Math.random() < density) result.push(garbageStatement());
+  });
+
+  return result;
+}
+
 function vmInstruction(record, index, mask, seed) {
   const [opcode, a = 0, b = 0, c = 0] = record;
   const salt = randomInt(3, 251);
-  return `{${(opcode + salt + index + mask + seed) % 256},${a},${b},${c},${salt}}`;
+  const variant = randomInt(0, 3);
+  const argMask = randomInt(1, 63);
+  return `{${(opcode + salt + index + mask + seed) % 256},${a + argMask},${b + argMask},${c + argMask},${salt},${variant},${argMask}}`;
 }
 
 function buildVmProgram(chunkCount, opcodes, mask, phantomRatio = 0) {
   const records = [];
   const guard = randomInt(4000, 9000);
+  const op = (name) => opcodePick(opcodes[name]);
 
-  records.push([opcodes.check, guard, guard]);
-  records.push([opcodes.lock, guard + mask, guard + mask]);
-  records.push([opcodes.drift, randomInt(40, 220), randomInt(40, 220)]);
+  records.push([op("check"), guard, guard]);
+  records.push([op("lock"), guard + mask, guard + mask]);
+  records.push([op("drift"), randomInt(40, 220), randomInt(40, 220)]);
   for (let i = 1; i <= chunkCount; i += 1) {
-    if (i % 5 === 0) records.push([opcodes.probe, guard + i, guard + i]);
-    if (i % 2 === 1) records.push([opcodes.junk, randomInt(30, 220), randomInt(30, 220)]);
-    if (i % 2 === 0) records.push([opcodes.noise, randomInt(10, 99), randomInt(10, 99)]);
-    if (i % 3 === 1) records.push([opcodes.mix, randomInt(20, 240), randomInt(20, 240)]);
-    if (i % 4 === 1) records.push([opcodes.weave, randomInt(20, 240), randomInt(20, 240)]);
-    if (i % 6 === 0) records.push([opcodes.gate, guard + i + mask, guard + i + mask]);
-    records.push([opcodes.part, i, randomInt(1, 255)]);
-    if (i % 4 === 0) records.push([opcodes.junk, randomInt(30, 220), randomInt(30, 220)]);
-    if (i % 4 === 2) records.push([opcodes.shadow, randomInt(20, 240), randomInt(20, 240)]);
-    if (i % 5 === 2) records.push([opcodes.drift, randomInt(40, 220), randomInt(40, 220)]);
-    if (i % 3 === 0) records.push([opcodes.check, guard + i, guard + i]);
+    if (i % 5 === 0) records.push([op("probe"), guard + i, guard + i]);
+    if (i % 2 === 1) records.push([op("junk"), randomInt(30, 220), randomInt(30, 220)]);
+    if (i % 2 === 0) records.push([op("noise"), randomInt(10, 99), randomInt(10, 99)]);
+    if (i % 3 === 1) records.push([op("mix"), randomInt(20, 240), randomInt(20, 240)]);
+    if (i % 4 === 1) records.push([op("weave"), randomInt(20, 240), randomInt(20, 240)]);
+    if (i % 6 === 0) records.push([op("gate"), guard + i + mask, guard + i + mask]);
+    records.push([op("part"), i, randomInt(1, 255)]);
+    if (i % 4 === 0) records.push([op("junk"), randomInt(30, 220), randomInt(30, 220)]);
+    if (i % 4 === 2) records.push([op("shadow"), randomInt(20, 240), randomInt(20, 240)]);
+    if (i % 5 === 2) records.push([op("drift"), randomInt(40, 220), randomInt(40, 220)]);
+    if (i % 3 === 0) records.push([op("check"), guard + i, guard + i]);
   }
-  records.push([opcodes.weave, randomInt(30, 230), randomInt(30, 230)]);
-  records.push([opcodes.gate, guard + chunkCount + mask, guard + chunkCount + mask]);
-  records.push([opcodes.exec, guard]);
+  records.push([op("weave"), randomInt(30, 230), randomInt(30, 230)]);
+  records.push([op("gate"), guard + chunkCount + mask, guard + chunkCount + mask]);
+  records.push([op("exec"), guard]);
+  injectDeadInstructions(records, opcodes, Math.min(0.22, 0.1 + phantomRatio * 0.1));
   const nodes = shuffle(records.map((record, index) => ({ record, logical: index + 1 })));
   const positionByLogical = {};
   nodes.forEach((node, index) => {
@@ -633,7 +810,7 @@ function buildVmProgram(chunkCount, opcodes, mask, phantomRatio = 0) {
     const next = positionByLogical[node.logical + 1] || 0;
     return [node.record[0], node.record[1], node.record[2], next];
   });
-  const opcodePool = Object.values(opcodes);
+  const opcodePool = Object.values(opcodes).flat();
   const phantomCount = Math.max(0, Math.floor(physicalRecords.length * phantomRatio));
 
   for (let i = 0; i < phantomCount; i += 1) {
@@ -660,6 +837,134 @@ function buildWatermark(perLine, numericArmor) {
   return luaRecord(encodeChunk([...encoder.encode(text)]), perLine, numericArmor);
 }
 
+function splitLiteralBody(body, minParts = 2) {
+  const atoms = [];
+
+  for (let i = 0; i < body.length; i += 1) {
+    if (body[i] === "\\" && i + 1 < body.length) {
+      atoms.push(body.slice(i, i + 2));
+      i += 1;
+    } else {
+      atoms.push(body[i]);
+    }
+  }
+
+  if (atoms.length < minParts) return [body];
+
+  const parts = [];
+  let cursor = 0;
+  while (cursor < atoms.length) {
+    const remaining = atoms.length - cursor;
+    const size = Math.min(remaining, randomInt(1, Math.max(1, Math.ceil(atoms.length / minParts))));
+    parts.push(atoms.slice(cursor, cursor + size).join(""));
+    cursor += size;
+  }
+
+  return parts.length > 1 ? parts : [body];
+}
+
+function splitLuaStringLiteral(raw) {
+  const quote = raw[0];
+  const body = raw.slice(1, -1);
+  const parts = splitLiteralBody(body, body.length > 8 ? 3 : 2);
+
+  if (parts.length <= 1) return raw;
+
+  return `(${parts.map((part) => `${quote}${part}${quote}`).join("..")})`;
+}
+
+function opaqueInteger(value) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > 9999999) return String(value);
+
+  const pad = randomInt(17, 173);
+  const scale = randomInt(2, 9);
+  const style = randomInt(0, 4);
+
+  if (style === 0) return `(${value + pad}-${pad})`;
+  if (style === 1) return `((${value * scale})/${scale})`;
+  if (style === 2) return `((#tostring({})-#tostring({}))+${value})`;
+  if (style === 3) return `(((${value + pad})*${scale}-${pad * scale})/${scale})`;
+  return `(((${value + pad})-${pad})+((#tostring(function()end)-#tostring(function()end))*0))`;
+}
+
+function hardenLuaLiterals(source, options = {}) {
+  let output = "";
+  let i = 0;
+  const splitStrings = options.splitStrings !== false;
+  const foldNumbers = options.foldNumbers !== false;
+
+  while (i < source.length) {
+    const char = source[i];
+    const next = source[i + 1];
+
+    if (char === "-" && next === "-") {
+      const blockEnd = longBracketEnd(source, i + 2);
+      if (blockEnd !== -1) {
+        output += source.slice(i, blockEnd);
+        i = blockEnd;
+      } else {
+        const lineEnd = source.indexOf("\n", i + 2);
+        const end = lineEnd === -1 ? source.length : lineEnd + 1;
+        output += source.slice(i, end);
+        i = end;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      const quote = char;
+      let literal = char;
+      i += 1;
+      while (i < source.length) {
+        literal += source[i];
+        if (source[i] === "\\") {
+          i += 1;
+          if (i < source.length) literal += source[i];
+        } else if (source[i] === quote) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      output += splitStrings ? splitLuaStringLiteral(literal) : literal;
+      continue;
+    }
+
+    if (char === "[") {
+      const end = longBracketEnd(source, i);
+      if (end !== -1) {
+        output += source.slice(i, end);
+        i = end;
+        continue;
+      }
+    }
+
+    if (
+      foldNumbers &&
+      /\d/.test(char) &&
+      !luaTokenChar(source[i - 1] || "") &&
+      source[i - 1] !== "." &&
+      source.slice(i, i + 2).toLowerCase() !== "0x"
+    ) {
+      let cursor = i;
+      while (cursor < source.length && /\d/.test(source[cursor])) cursor += 1;
+
+      const token = source.slice(i, cursor);
+      const after = source[cursor] || "";
+      if (after !== "." && !luaTokenChar(after)) {
+        output += opaqueInteger(Number(token));
+        i = cursor;
+        continue;
+      }
+    }
+
+    output += char;
+    i += 1;
+  }
+
+  return output;
+}
+
 function wrapControlFlow(source) {
   const gateName = randomName();
   const seedName = randomName();
@@ -677,18 +982,24 @@ function wrapControlFlow(source) {
   ].join("\n");
 }
 
-function armoredSource(source, preset, compatible, robloxMode) {
+function armoredSource(source, preset, compatible, robloxMode, progress) {
   const profile = presetProfile(preset);
-  let stage = wrapControlFlow(minifyLua(source));
+  let stage = wrapControlFlow(hardenLuaLiterals(minifyLua(source)));
 
   for (let layer = 0; layer < profile.layers; layer += 1) {
     const stagePreset = layer === 0 ? preset : "compact";
     const stageArmor = profile.numericArmor && (preset === "god" || layer === 0);
+    const layerStart = 8 + (layer / profile.layers) * 74;
+    const layerSpan = 74 / profile.layers;
     stage = encodeLua(stage, stagePreset, compatible, robloxMode, {
       numericArmor: stageArmor,
+      progress,
+      progressBase: layerStart,
+      progressSpan: layerSpan,
     });
 
     if (layer < profile.layers - 1) {
+      progress?.(layerStart + layerSpan * 0.92, "generatingOutput");
       stage = wrapControlFlow(minifyLua(stage));
     }
   }
@@ -699,47 +1010,46 @@ function armoredSource(source, preset, compatible, robloxMode) {
 function encodeLua(source, preset, compatible, robloxMode, options = {}) {
   const profile = presetProfile(preset);
   const numericArmor = options.numericArmor ?? profile.numericArmor;
+  const progress = options.progress;
+  const progressBase = options.progressBase ?? 10;
+  const progressSpan = options.progressSpan ?? 70;
   const names = randomNames(132);
   const bytes = [...encoder.encode(source)];
-  const chunks = splitBytes(bytes, preset).map(encodeChunk);
-  const payloadChunks = addDecoyChunks(chunks, preset);
   const perLine = profile.perLine;
-  const payload = payloadChunks.map((chunk) => luaRecord(chunk, perLine, numericArmor)).join(",\n");
+
+  progress?.(progressBase + progressSpan * 0.05, "encodingStrings");
   const stringTable = buildRuntimeStringTable(perLine, numericArmor);
   const watermark = buildWatermark(perLine, numericArmor);
+
+  progress?.(progressBase + progressSpan * 0.22, "encodingPayload");
+  const chunks = splitBytes(bytes, preset).map(encodeChunk);
+  const payloadChunks = addDecoyChunks(chunks, preset);
+  const payload = payloadChunks.map((chunk) => luaRecord(chunk, perLine, numericArmor)).join(",\n");
+
   const guard = randomInt(1000, 9000);
   const opaqueA = randomInt(11, 99);
   const opaqueB = opaqueA * 2;
-  const opcodeValues = shuffle([
-    randomInt(7, 24),
-    randomInt(26, 43),
-    randomInt(45, 62),
-    randomInt(64, 83),
-    randomInt(85, 104),
-    randomInt(106, 125),
-    randomInt(127, 146),
-    randomInt(148, 167),
-    randomInt(169, 188),
-    randomInt(190, 209),
-    randomInt(211, 230),
-    randomInt(232, 252),
-  ]);
+  const opcodeValues = randomOpcodeValues(36);
   const opcodes = {
-    part: opcodeValues[0],
-    exec: opcodeValues[1],
-    noise: opcodeValues[2],
-    check: opcodeValues[3],
-    junk: opcodeValues[4],
-    mix: opcodeValues[5],
-    probe: opcodeValues[6],
-    shadow: opcodeValues[7],
-    gate: opcodeValues[8],
-    drift: opcodeValues[9],
-    lock: opcodeValues[10],
-    weave: opcodeValues[11],
+    part: opcodeValues.slice(0, 3),
+    exec: opcodeValues.slice(3, 6),
+    noise: opcodeValues.slice(6, 9),
+    check: opcodeValues.slice(9, 12),
+    junk: opcodeValues.slice(12, 15),
+    mix: opcodeValues.slice(15, 18),
+    probe: opcodeValues.slice(18, 21),
+    shadow: opcodeValues.slice(21, 24),
+    gate: opcodeValues.slice(24, 27),
+    drift: opcodeValues.slice(27, 30),
+    lock: opcodeValues.slice(30, 33),
+    weave: opcodeValues.slice(33, 36),
   };
+  const opcodeSeed = randomInt(3000, 90000);
+  const mutatedOpcodes = mutateOpcodes(opcodes, opcodeSeed);
   const instructionMask = randomInt(17, 231);
-  const program = buildVmProgram(chunks.length, opcodes, instructionMask, profile.phantomRatio || 0);
+  progress?.(progressBase + progressSpan * 0.68, "buildingVm");
+  const program = buildVmProgram(chunks.length, mutatedOpcodes, instructionMask, profile.phantomRatio || 0);
+  progress?.(progressBase + progressSpan * 0.86, "generatingOutput");
   const loadPrimary = robloxMode || compatible ? stringTable.indexes.loadstring : stringTable.indexes.load;
   const loadFallback = robloxMode || compatible ? stringTable.indexes.load : stringTable.indexes.loadstring;
   const environmentExpr = robloxMode
@@ -758,24 +1068,24 @@ function encodeLua(source, preset, compatible, robloxMode, options = {}) {
         ].join("\n")
       : "";
 
-  return [
+  const lines = [
     `local ${names[0]}=${guard}`,
     `local ${names[18]}=${instructionMask}`,
     `local ${names[64]}=${program.guard}`,
     `local ${names[65]}=${program.records.length}`,
     `local ${names[66]}=${chunks.length}`,
-    `local ${names[19]}=${opcodes.part}`,
-    `local ${names[20]}=${opcodes.exec}`,
-    `local ${names[21]}=${opcodes.noise}`,
-    `local ${names[22]}=${opcodes.check}`,
-    `local ${names[68]}=${opcodes.junk}`,
-    `local ${names[78]}=${opcodes.mix}`,
-    `local ${names[79]}=${opcodes.probe}`,
-    `local ${names[80]}=${opcodes.shadow}`,
-    `local ${names[90]}=${opcodes.gate}`,
-    `local ${names[91]}=${opcodes.drift}`,
-    `local ${names[92]}=${opcodes.lock}`,
-    `local ${names[93]}=${opcodes.weave}`,
+    `local ${names[19]}=${luaOpcodeSet(mutatedOpcodes.part)}`,
+    `local ${names[20]}=${luaOpcodeSet(mutatedOpcodes.exec)}`,
+    `local ${names[21]}=${luaOpcodeSet(mutatedOpcodes.noise)}`,
+    `local ${names[22]}=${luaOpcodeSet(mutatedOpcodes.check)}`,
+    `local ${names[68]}=${luaOpcodeSet(mutatedOpcodes.junk)}`,
+    `local ${names[78]}=${luaOpcodeSet(mutatedOpcodes.mix)}`,
+    `local ${names[79]}=${luaOpcodeSet(mutatedOpcodes.probe)}`,
+    `local ${names[80]}=${luaOpcodeSet(mutatedOpcodes.shadow)}`,
+    `local ${names[90]}=${luaOpcodeSet(mutatedOpcodes.gate)}`,
+    `local ${names[91]}=${luaOpcodeSet(mutatedOpcodes.drift)}`,
+    `local ${names[92]}=${luaOpcodeSet(mutatedOpcodes.lock)}`,
+    `local ${names[93]}=${luaOpcodeSet(mutatedOpcodes.weave)}`,
     `local ${names[1]}={`,
     payload,
     `}`,
@@ -836,6 +1146,10 @@ function encodeLua(source, preset, compatible, robloxMode, options = {}) {
     `return ${names[42]}%256`,
     "end",
     `local ${names[40]}=${names[35]}[${names[37]}(${stringTable.indexes.error})] or error`,
+    `if type(${names[35]})~=${names[37]}(${stringTable.indexes.table}) then ${names[40]}(${names[37]}(${stringTable.indexes["invalid env"]})) end`,
+    `if type(getfenv)==${names[37]}(${stringTable.indexes["function"]}) then local ${names[121]}=getfenv();if ${names[121]} and _G and ${names[121]}~=_G then ${names[40]}(${names[37]}(${stringTable.indexes.sandbox})) end end`,
+    `if rawget and _G and rawget(_G,${names[37]}(${stringTable.indexes.loadstring}))==nil and rawget(_G,${names[37]}(${stringTable.indexes.load}))==nil then ${names[40]}(${names[37]}(${stringTable.indexes.blocked})) end`,
+    `local ${names[122]}=${names[35]}[${names[37]}(${stringTable.indexes.os})];local ${names[123]}=type(${names[122]})==${names[37]}(${stringTable.indexes.table}) and ${names[122]}[${names[37]}(${stringTable.indexes.clock})];if type(${names[123]})==${names[37]}(${stringTable.indexes["function"]}) then local ${names[124]}=${names[123]}();local ${names[125]}=${names[123]}()-${names[124]};if ${names[125]}>0.1 then ${names[40]}(${names[37]}(${stringTable.indexes["debug detected"]})) end end`,
     `local function ${names[54]}()`,
     `local ${names[55]}=${names[35]}[${names[37]}(${stringTable.indexes.debug})]`,
     `if type(${names[55]})=="table" then local ${names[56]}=${names[55]}[${names[37]}(${stringTable.indexes.gethook})];if type(${names[56]})=="function" then local ${names[51]},${names[57]},${names[58]},${names[59]}=pcall(${names[56]});if ${names[51]} and (${names[57]}~=nil or (${names[59]} and ${names[59]}~=0)) then return false end end end`,
@@ -853,42 +1167,52 @@ function encodeLua(source, preset, compatible, robloxMode, options = {}) {
     `local ${names[4]}=${names[35]}[${names[37]}(${loadPrimary})] or ${names[35]}[${names[37]}(${loadFallback})]`,
     `if type(${names[4]})~=${names[37]}(${stringTable.indexes["function"]}) then ${names[40]}(${names[37]}(${stringTable.indexes["loadstring unavailable"]})) end`,
     `local ${names[74]}=${names[41]}()`,
-    `local ${names[24]}={${names[25]}={},${names[26]}=${program.start},${names[27]}=0,${names[75]}=0}`,
+    `local ${names[24]}={${names[25]}={},${names[26]}=${program.start},${names[27]}=0,${names[75]}=0,${names[108]}={0,0,0,0,0,0,0,0},${names[109]}=0}`,
     `if #${names[23]}~=${program.records.length} then ${names[40]}(${names[37]}(${stringTable.indexes["integrity failure"]})) end`,
     `local function ${names[28]}(${names[29]},${names[30]}) local ${names[62]}=${names[74]};local ${names[67]}=(${names[64]}+${names[65]}+${names[18]}+${names[66]})%256;return (${names[29]}-${names[30]}-${names[24]}.${names[26]}-${names[18]}-${names[67]}+${names[62]})%256 end`,
     `local ${names[63]}={}`,
-    `${names[63]}[(${names[19]}+${names[74]})%256]=function(${names[31]}) ${names[24]}.${names[25]}[#${names[24]}.${names[25]}+1]=${names[6]}(${names[1]}[${names[31]}[2]]);${names[24]}.${names[27]}=(${names[24]}.${names[27]}+${names[31]}[3]+#${names[24]}.${names[25]})%65535;${names[24]}.${names[26]}=${names[31]}[4] end`,
-    `${names[63]}[(${names[22]}+${names[74]})%256]=function(${names[31]}) if ${names[31]}[2]~=${names[31]}[3] then ${names[40]}(${names[37]}(${stringTable.indexes["integrity failure"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end`,
-    `${names[63]}[(${names[21]}+${names[74]})%256]=function(${names[31]}) ${names[24]}.${names[27]}=(${names[24]}.${names[27]}+${names[31]}[2]*${names[31]}[3])%65535;${names[24]}.${names[26]}=${names[31]}[4] end`,
-    `${names[63]}[(${names[68]}+${names[74]})%256]=function(${names[31]}) local ${names[76]}=(${names[31]}[2]*7+${names[31]}[3]*13+#${names[24]}.${names[25]})%257;${names[24]}.${names[75]}=(${names[24]}.${names[75]}+${names[76]}-${names[76]})%65535;${names[24]}.${names[26]}=${names[31]}[4] end`,
-    `${names[63]}[(${names[78]}+${names[74]})%256]=function(${names[31]}) local ${names[81]}=(${names[31]}[2]+${names[31]}[3]+${names[24]}.${names[27]})%256;${names[24]}.${names[75]}=(${names[24]}.${names[75]}+${names[81]}-${names[81]})%65535;${names[24]}.${names[26]}=${names[31]}[4] end`,
-    `${names[63]}[(${names[79]}+${names[74]})%256]=function(${names[31]}) if ((${names[31]}[2]-${names[31]}[3])%1)~=0 then ${names[40]}(${names[37]}(${stringTable.indexes["integrity failure"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end`,
-    `${names[63]}[(${names[80]}+${names[74]})%256]=function(${names[31]}) local ${names[82]}=tostring(${names[31]}[2]*${names[31]}[3]);if #${names[82]}<1 then ${names[40]}(${names[37]}(${stringTable.indexes["runtime blocked"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end`,
-    `${names[63]}[(${names[90]}+${names[74]})%256]=function(${names[31]}) if ${names[31]}[2]~=${names[31]}[3] then ${names[40]}(${names[37]}(${stringTable.indexes["integrity failure"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end`,
-    `${names[63]}[(${names[91]}+${names[74]})%256]=function(${names[31]}) local ${names[101]}=(${names[31]}[2]*31+${names[31]}[3]*17+${names[24]}.${names[27]})%65535;${names[24]}.${names[27]}=(${names[24]}.${names[27]}+${names[101]})%65535;${names[24]}.${names[26]}=${names[31]}[4] end`,
-    `${names[63]}[(${names[92]}+${names[74]})%256]=function(${names[31]}) if ((${names[31]}[2]-${names[31]}[3])+(${names[31]}[3]-${names[31]}[2]))~=0 then ${names[40]}(${names[37]}(${stringTable.indexes["runtime blocked"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end`,
-    `${names[63]}[(${names[93]}+${names[74]})%256]=function(${names[31]}) local ${names[102]}=(${names[31]}[2]*${names[31]}[3]+${names[24]}.${names[75]}+#${names[24]}.${names[25]})%257;${names[24]}.${names[75]}=(${names[24]}.${names[75]}+${names[102]}-${names[102]})%65535;${names[24]}.${names[26]}=${names[31]}[4] end`,
-    `${names[63]}[(${names[20]}+${names[74]})%256]=function() ${names[24]}.${names[26]}=0 end`,
+    `local function ${names[110]}(${names[111]},${names[112]}) for ${names[113]}=1,#${names[111]} do ${names[63]}[(${names[111]}[${names[113]}]+${names[74]})%256]=${names[112]} end end`,
+    `${names[110]}(${names[19]},function(${names[31]}) ${names[24]}.${names[108]}[1]=${names[31]}[2];${names[24]}.${names[108]}[2]=#${names[24]}.${names[25]}+1;${names[24]}.${names[25]}[${names[24]}.${names[108]}[2]]=${names[6]}(${names[1]}[${names[24]}.${names[108]}[1]]);${names[24]}.${names[27]}=(${names[24]}.${names[27]}+${names[31]}[3]+#${names[24]}.${names[25]})%65535;${names[24]}.${names[26]}=${names[31]}[4] end)`,
+    `${names[110]}(${names[22]},function(${names[31]}) if ${names[31]}[2]~=${names[31]}[3] then ${names[40]}(${names[37]}(${stringTable.indexes["integrity failure"]})) end;${names[24]}.${names[108]}[3]=(${names[31]}[2]+${names[31]}[3])%65535;${names[24]}.${names[26]}=${names[31]}[4] end)`,
+    `${names[110]}(${names[21]},function(${names[31]}) ${names[24]}.${names[108]}[4]=(${names[31]}[2]*${names[31]}[3])%65535;${names[24]}.${names[27]}=(${names[24]}.${names[27]}+${names[24]}.${names[108]}[4])%65535;${names[24]}.${names[26]}=${names[31]}[4] end)`,
+    `${names[110]}(${names[68]},function(${names[31]}) local ${names[76]}=(${names[31]}[2]*7+${names[31]}[3]*13+#${names[24]}.${names[25]})%257;${names[24]}.${names[75]}=(${names[24]}.${names[75]}+${names[76]}-${names[76]})%65535;${names[24]}.${names[108]}[5]=${names[76]};${names[24]}.${names[26]}=${names[31]}[4] end)`,
+    `${names[110]}(${names[78]},function(${names[31]}) local ${names[81]}=(${names[31]}[2]+${names[31]}[3]+${names[24]}.${names[27]})%256;${names[24]}.${names[75]}=(${names[24]}.${names[75]}+${names[81]}-${names[81]})%65535;${names[24]}.${names[108]}[6]=${names[81]};${names[24]}.${names[26]}=${names[31]}[4] end)`,
+    `${names[110]}(${names[79]},function(${names[31]}) if ((${names[31]}[2]-${names[31]}[3])%1)~=0 then ${names[40]}(${names[37]}(${stringTable.indexes["integrity failure"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end)`,
+    `${names[110]}(${names[80]},function(${names[31]}) local ${names[82]}=tostring(${names[31]}[2]*${names[31]}[3]);if #${names[82]}<1 then ${names[40]}(${names[37]}(${stringTable.indexes["runtime blocked"]})) end;${names[24]}.${names[108]}[7]=#${names[82]};${names[24]}.${names[26]}=${names[31]}[4] end)`,
+    `${names[110]}(${names[90]},function(${names[31]}) if ${names[31]}[2]~=${names[31]}[3] then ${names[40]}(${names[37]}(${stringTable.indexes["integrity failure"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end)`,
+    `${names[110]}(${names[91]},function(${names[31]}) local ${names[101]}=(${names[31]}[2]*31+${names[31]}[3]*17+${names[24]}.${names[27]})%65535;${names[24]}.${names[108]}[8]=${names[101]};${names[24]}.${names[27]}=(${names[24]}.${names[27]}+${names[101]})%65535;${names[24]}.${names[26]}=${names[31]}[4] end)`,
+    `${names[110]}(${names[92]},function(${names[31]}) if ((${names[31]}[2]-${names[31]}[3])+(${names[31]}[3]-${names[31]}[2]))~=0 then ${names[40]}(${names[37]}(${stringTable.indexes["runtime blocked"]})) end;${names[24]}.${names[26]}=${names[31]}[4] end)`,
+    `${names[110]}(${names[93]},function(${names[31]}) local ${names[102]}=(${names[31]}[2]*${names[31]}[3]+${names[24]}.${names[75]}+#${names[24]}.${names[25]})%257;${names[24]}.${names[75]}=(${names[24]}.${names[75]}+${names[102]}-${names[102]})%65535;${names[24]}.${names[26]}=${names[31]}[4] end)`,
+    `${names[110]}(${names[20]},function() ${names[24]}.${names[26]}=0 end)`,
+    `local ${names[114]}={${names[63]},${names[63]}}`,
+    `local function ${names[115]}(${names[32]},${names[31]}) local ${names[116]}=${names[114]}[(((${names[24]}.${names[109]}+(${names[31]}[6] or 0))%#${names[114]})+1)];return ${names[116]}[${names[32]}] end`,
+    `local function ${names[117]}(${names[5]},${names[31]}) local ${names[119]}=1;local ${names[120]};${names[120]}={function() ${names[24]}.${names[108]}[6]=(${names[24]}.${names[108]}[6]+(${names[31]}[6] or 0)+${names[24]}.${names[26]})%257;${names[119]}=2 end,function() ${names[5]}(${names[31]});${names[119]}=0 end};while ${names[119]}>0 do ${names[120]}[${names[119]}]() end end`,
     `local function ${names[17]}()`,
     `while ${names[24]}.${names[26]} and ${names[24]}.${names[26]}>0 and ${names[24]}.${names[26]}<=#${names[23]} do`,
     `local ${names[31]}=${names[23]}[${names[24]}.${names[26]}]`,
+    `if ${names[31]}[7] then local ${names[118]}=${names[31]}[7];${names[31]}[2]=${names[31]}[2]-${names[118]};${names[31]}[3]=${names[31]}[3]-${names[118]};${names[31]}[4]=${names[31]}[4]-${names[118]};${names[31]}[7]=nil end`,
+    `${names[24]}.${names[109]}=(${names[24]}.${names[109]}+1)%65535`,
     `local ${names[32]}=${names[28]}(${names[31]}[1],${names[31]}[5])`,
-    `local ${names[5]}=${names[63]}[${names[32]}]`,
+    `local ${names[5]}=${names[115]}(${names[32]},${names[31]})`,
     `if not ${names[5]} then ${names[40]}(${names[37]}(${stringTable.indexes["runtime blocked"]})) end`,
-    `if ((((${names[32]}+${names[24]}.${names[26]})*((${names[32]}+${names[24]}.${names[26]})+1))%2)==0) and (((${names[24]}.${names[26]}*${names[24]}.${names[26]}+${names[24]}.${names[26]})%2)==0) then ${names[5]}(${names[31]}) else ${names[40]}(${names[37]}(${stringTable.indexes["runtime blocked"]})) end`,
+    `if ((((${names[32]}+${names[24]}.${names[26]})*((${names[32]}+${names[24]}.${names[26]})+1))%2)==0) and (((${names[24]}.${names[26]}*${names[24]}.${names[26]}+${names[24]}.${names[26]})%2)==0) then ${names[117]}(${names[5]},${names[31]}) else ${names[40]}(${names[37]}(${stringTable.indexes["runtime blocked"]})) end`,
     "end",
     `${names[1]}=nil;${names[23]}=nil`,
     `return ${names[3]}(${names[24]}.${names[25]})`,
     "end",
-    `local ${names[16]}=${names[4]}(${names[17]}())`,
-    `${names[17]}=nil`,
     `if ${names[0]}~=${guard} then ${names[40]}(${names[37]}(${stringTable.indexes["runtime blocked"]})) end`,
+    `local ${names[106]}=${names[17]}()`,
+    `local ${names[16]}=${names[4]}(${names[106]})`,
+    `${names[106]}=nil;${names[17]}=nil;${names[1]}=nil;${names[23]}=nil;${names[33]}=nil;${names[34]}=nil;${names[36]}=nil;${names[63]}=nil`,
+    `pcall(function() local ${names[107]}=${names[35]}[${names[37]}(${stringTable.indexes.collectgarbage})] or collectgarbage;if type(${names[107]})=="function" then pcall(${names[107]},"collect");pcall(${names[107]},"collect") end end)`,
     `return ${names[16]}()`,
-  ].filter(Boolean).join("\n");
+  ].filter(Boolean);
+
+  return garbageSprayLines(lines, preset === "god" ? 0.16 : 0.08).join("\n");
 }
 
-function addBanner(source) {
-  if (!bannerToggle.checked) return source;
+function addBanner(source, enabled = bannerToggle?.checked) {
+  if (!enabled) return source;
   return [
     "-- CoolLight Nightmare VM",
     "-- Triple-layer VM Pack + Rolling Cipher + Poison Payload Lua Protection",
@@ -989,46 +1313,172 @@ function compactLua(source) {
 
 function formatGeneratedLua(source) {
   const compact = compactLua(source);
-  return `return(function()${compact}end)()`;
+  const hardened = hardenLuaLiterals(compact, {
+    splitStrings: true,
+    foldNumbers: false,
+  });
+
+  return `return(function()${hardened}end)()`;
+}
+
+function buildObfuscatedOutput(source, options) {
+  const progress = options.progress;
+  progress?.(3, "processing");
+
+  const result = formatGeneratedLua(
+    armoredSource(source, options.preset, options.compatible, options.robloxMode, progress),
+  );
+
+  progress?.(92, "generatingOutput");
+  return addBanner(result, options.banner);
+}
+
+if (!hasDOM && typeof self !== "undefined") {
+  self.onmessage = (event) => {
+    const { id, source, options } = event.data || {};
+
+    try {
+      const result = buildObfuscatedOutput(source || "", {
+        ...(options || {}),
+        progress: (progress, status) => self.postMessage({ id, progress, status }),
+      });
+      self.postMessage({ id, progress: 100, result });
+    } catch (error) {
+      self.postMessage({
+        id,
+        progress: 100,
+        error: error?.message || "Worker failed",
+      });
+    }
+  };
+}
+
+function workerScriptUrl() {
+  const script = document.querySelector('script[src$="script.js"]');
+  return script ? script.getAttribute("src") : "script.js";
+}
+
+function stopObfuscationWorker() {
+  if (obfuscationWorker) {
+    obfuscationWorker.terminate();
+    obfuscationWorker = null;
+  }
+  workerBusy = false;
+}
+
+function obfuscateOnMainThread(source, options) {
+  const result = buildObfuscatedOutput(source, {
+    ...options,
+    progress: (progress, status) => setProgressStatus(status, progress),
+  });
+  setOutputValue(result);
+  setStatus("done");
+}
+
+function obfuscateInWorker(source, options) {
+  if (typeof Worker === "undefined") {
+    obfuscateOnMainThread(source, options);
+    return;
+  }
+
+  const jobId = obfuscationJob + 1;
+  obfuscationJob = jobId;
+  if (workerBusy) stopObfuscationWorker();
+
+  if (!obfuscationWorker) {
+    try {
+      obfuscationWorker = new Worker(workerScriptUrl());
+    } catch {
+      obfuscateOnMainThread(source, options);
+      return;
+    }
+  }
+
+  obfuscationWorker.onmessage = (event) => {
+    if (event.data?.id !== jobId) return;
+
+    if (event.data.progress && event.data.progress < 100) {
+      setProgressStatus(event.data.status || "processing", event.data.progress);
+      return;
+    }
+
+    workerBusy = false;
+    if (event.data.error) {
+      setStatus("failed", "error");
+      setOutputValue(`-- Error: ${event.data.error}`, { error: true });
+    } else {
+      setOutputValue(event.data.result || "");
+      setStatus("done");
+    }
+  };
+
+  obfuscationWorker.onerror = (error) => {
+    if (jobId !== obfuscationJob) return;
+    stopObfuscationWorker();
+    setStatus("failed", "error");
+    setOutputValue(`-- Error: ${error.message || "Worker failed"}`, { error: true });
+  };
+
+  workerBusy = true;
+  setProgressStatus("processing", 1);
+  obfuscationWorker.postMessage({ id: jobId, source, options });
 }
 
 function obfuscate() {
   const source = inputCode.value.trim();
   if (!source) {
-    outputCode.value = "";
+    clearOutputValue();
     setStatus("emptyInput", "error");
-    updateStats();
+    return;
+  }
+
+  const preset = presetSelect.value;
+  const sourceSize = byteLength(source);
+  const presetLimit = PRESET_LIMITS[preset] || PRESET_LIMITS.balanced;
+
+  if (sourceSize > presetLimit) {
+    setStatus("tooLargeForPreset", "error");
+    setOutputValue(
+      `-- Error: ${translate("tooLargeForPreset")}\n-- Preset: ${preset}\n-- Size: ${formatBytes(sourceSize)} / ${formatBytes(presetLimit)}\n-- Gunakan preset yang lebih ringan atau pecah input menjadi file lebih kecil.`,
+      { error: true },
+    );
     return;
   }
 
   try {
-    const preset = presetSelect.value;
-    const result = formatGeneratedLua(
-      armoredSource(source, preset, compatToggle.checked, robloxToggle.checked),
-    );
-
-    outputCode.value = addBanner(result);
-    setStatus("done");
-    updateStats();
+    obfuscateInWorker(source, {
+      preset,
+      compatible: compatToggle.checked,
+      robloxMode: robloxToggle.checked,
+      banner: bannerToggle.checked,
+    });
   } catch (error) {
     setStatus("failed", "error");
-    outputCode.value = `-- Error: ${error.message}`;
-    updateStats();
+    setOutputValue(`-- Error: ${error.message}`, { error: true });
   }
 }
 
 async function copyOutput() {
-  if (!outputCode.value) {
+  const value = currentOutputValue();
+  if (!value) {
     setStatus("noOutput", "error");
     return;
   }
 
   try {
-    await navigator.clipboard.writeText(outputCode.value);
+    await navigator.clipboard.writeText(value);
     setStatus("copied");
   } catch {
-    outputCode.select();
+    const mirror = document.createElement("textarea");
+    mirror.value = value;
+    mirror.setAttribute("readonly", "");
+    mirror.style.position = "fixed";
+    mirror.style.left = "-9999px";
+    mirror.style.top = "0";
+    document.body.appendChild(mirror);
+    mirror.select();
     document.execCommand("copy");
+    mirror.remove();
     setStatus("copied");
   }
 }
@@ -1044,12 +1494,13 @@ async function pasteInput() {
 }
 
 function downloadOutput() {
-  if (!outputCode.value) {
+  const value = currentOutputValue();
+  if (!value) {
     setStatus("noOutput", "error");
     return;
   }
 
-  const blob = new Blob([outputCode.value], { type: "text/plain;charset=utf-8" });
+  const blob = new Blob([value], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -1109,33 +1560,35 @@ function drawSignal() {
   requestAnimationFrame(drawSignal);
 }
 
-inputCode.addEventListener("input", updateStats);
-outputCode.addEventListener("input", updateStats);
-languageSelect.addEventListener("change", () => applyLanguage(languageSelect.value));
-obfuscateBtn.addEventListener("click", obfuscate);
-copyBtn.addEventListener("click", copyOutput);
-pasteBtn.addEventListener("click", pasteInput);
-downloadBtn.addEventListener("click", downloadOutput);
-sampleBtn.addEventListener("click", () => {
-  inputCode.value = SAMPLE_CODE;
-  setStatus("sampleLoaded");
-  updateStats();
-  obfuscate();
-});
-clearBtn.addEventListener("click", () => {
-  inputCode.value = "";
-  outputCode.value = "";
-  setStatus("cleared");
-  updateStats();
-});
-window.addEventListener("resize", () => {
+if (hasDOM) {
+  inputCode.addEventListener("input", updateStats);
+  outputCode.addEventListener("input", updateStats);
+  languageSelect.addEventListener("change", () => applyLanguage(languageSelect.value));
+  obfuscateBtn.addEventListener("click", obfuscate);
+  copyBtn.addEventListener("click", copyOutput);
+  pasteBtn.addEventListener("click", pasteInput);
+  downloadBtn.addEventListener("click", downloadOutput);
+  sampleBtn.addEventListener("click", () => {
+    inputCode.value = SAMPLE_CODE;
+    setStatus("sampleLoaded");
+    updateStats();
+    obfuscate();
+  });
+  clearBtn.addEventListener("click", () => {
+    inputCode.value = "";
+    stopObfuscationWorker();
+    clearOutputValue();
+    setStatus("cleared");
+  });
+  window.addEventListener("resize", () => {
+    resizeCanvas();
+    resetParticles();
+  });
+
   resizeCanvas();
   resetParticles();
-});
-
-resizeCanvas();
-resetParticles();
-drawSignal();
-installGodPreset();
-applyLanguage(currentLanguage);
-updateStats();
+  drawSignal();
+  installGodPreset();
+  applyLanguage(currentLanguage);
+  updateStats();
+}
