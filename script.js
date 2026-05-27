@@ -39,10 +39,10 @@ const translations = {
     inputTitle: "Kode Lua",
     pasteButton: "Tempel",
     inputPlaceholder: "Tulis atau tempel kode Lua di sini...",
-    outputTitle: "Hasil CoolLight Nightmare VM",
+    outputTitle: "Hasil Axiom VM",
     copyButton: "Salin",
     downloadButton: "Unduh",
-    outputPlaceholder: "Hasil CoolLight Nightmare VM akan muncul di sini...",
+    outputPlaceholder: "Hasil Axiom VM akan muncul di sini...",
     emptyInput: "Masukkan kode Lua",
     processing: "Memproses di background",
     encodingStrings: "Encode string table",
@@ -50,7 +50,7 @@ const translations = {
     buildingVm: "Bangun VM",
     generatingOutput: "Generate output",
     tooLargeForPreset: "Kode terlalu besar untuk preset ini",
-    done: "CoolLight Nightmare VM selesai",
+    done: "Axiom VM selesai",
     failed: "Gagal memproses kode",
     noOutput: "Belum ada hasil",
     copied: "Disalin",
@@ -77,10 +77,10 @@ const translations = {
     inputTitle: "Lua Code",
     pasteButton: "Paste",
     inputPlaceholder: "Write or paste Lua code here...",
-    outputTitle: "CoolLight Nightmare VM Output",
+    outputTitle: "Axiom VM Output",
     copyButton: "Copy",
     downloadButton: "Download",
-    outputPlaceholder: "CoolLight Nightmare VM output will appear here...",
+    outputPlaceholder: "Axiom VM output will appear here...",
     emptyInput: "Enter Lua code",
     processing: "Processing in background",
     encodingStrings: "Encoding string table",
@@ -88,7 +88,7 @@ const translations = {
     buildingVm: "Building VM",
     generatingOutput: "Generating output",
     tooLargeForPreset: "Code is too large for this preset",
-    done: "CoolLight Nightmare VM complete",
+    done: "Axiom VM complete",
     failed: "Failed to process code",
     noOutput: "No output yet",
     copied: "Copied",
@@ -180,7 +180,7 @@ function installGodPreset() {
   if (!presetSelect.querySelector('option[value="god"]')) {
     const option = document.createElement("option");
     option.value = "god";
-    option.textContent = "Luraph Nightmare VM";
+    option.textContent = "Axiom Max VM";
     presetSelect.appendChild(option);
   }
 
@@ -1214,7 +1214,7 @@ function encodeLua(source, preset, compatible, robloxMode, options = {}) {
 function addBanner(source, enabled = bannerToggle?.checked) {
   if (!enabled) return source;
   return [
-    "-- CoolLight Nightmare VM",
+    "-- Axiom VM",
     "-- Triple-layer VM Pack + Rolling Cipher + Poison Payload Lua Protection",
     "",
     source,
@@ -1504,7 +1504,7 @@ function downloadOutput() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "coollight-nightmare-vm-obfuscated.lua";
+  link.download = "axiom-vm-obfuscated.lua";
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -1530,7 +1530,7 @@ function resetParticles() {
     y: Math.random() * window.innerHeight,
     speed: 0.35 + Math.random() * 1.2,
     size: 1 + Math.random() * 2.5,
-    hue: Math.random() > 0.5 ? "244, 190, 42" : "255, 255, 255",
+    hue: Math.random() > 0.5 ? "255, 255, 255" : "170, 170, 170",
     alpha: 0.24 + Math.random() * 0.18,
   }));
 }
