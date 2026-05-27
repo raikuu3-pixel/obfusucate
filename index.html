@@ -36,7 +36,7 @@
           <div class="process-card" aria-label="Proses obfuscate aktif">
             <span class="process-kicker" data-i18n="processKicker">Proses tetap</span>
             <strong>Nightmare VM Shield</strong>
-            <p data-i18n="processDescription">Kode Lua dipadatkan ke triple-layer VM acak dengan rolling cipher, poison chunks, phantom opcodes, string decrypt on-demand, dan mode Roblox/Luau.</p>
+            <p data-i18n="processDescription">Kode Lua dipadatkan ke register-based VM acak dengan opcode polymorphism, instruction mutation, nested dispatch VM, dynamic handler switching, rolling cipher, dan anti-memory dump cleanup.</p>
             <div class="protection-list">
               <span>VM</span>
               <span>Dynamic Keys</span>
@@ -48,6 +48,18 @@
               <span>Poison Chunks</span>
               <span>Phantom Ops</span>
               <span>Rolling Cipher</span>
+              <span>Anti-Dump</span>
+              <span>Split Strings</span>
+              <span>Math Folding</span>
+              <span>Register VM</span>
+              <span>Opcode Poly</span>
+              <span>Instr Mutation</span>
+              <span>Nested VM</span>
+              <span>Handler Switch</span>
+              <span>Dead VM Code</span>
+              <span>Timer Guard</span>
+              <span>Env Fingerprint</span>
+              <span>Garbage Spray</span>
               <span>Luau</span>
               <span>Watermark</span>
             </div>
@@ -122,6 +134,7 @@
             <div class="editor-header">
               <h2 data-i18n="outputTitle">Hasil CoolLight Nightmare VM</h2>
               <div class="inline-actions">
+                <span class="preview-pill" id="previewPill" hidden>Preview</span>
                 <button id="copyBtn" type="button" data-i18n="copyButton">Salin</button>
                 <button id="downloadBtn" type="button" data-i18n="downloadButton">Unduh</button>
               </div>
