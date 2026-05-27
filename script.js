@@ -1147,8 +1147,12 @@ function encodeLua(source, preset, compatible, robloxMode, options = {}) {
     "end",
     `local ${names[40]}=${names[35]}[${names[37]}(${stringTable.indexes.error})] or error`,
     `if type(${names[35]})~=${names[37]}(${stringTable.indexes.table}) then ${names[40]}(${names[37]}(${stringTable.indexes["invalid env"]})) end`,
-    `if type(getfenv)==${names[37]}(${stringTable.indexes["function"]}) then local ${names[121]}=getfenv();if ${names[121]} and _G and ${names[121]}~=_G then ${names[40]}(${names[37]}(${stringTable.indexes.sandbox})) end end`,
-    `if rawget and _G and rawget(_G,${names[37]}(${stringTable.indexes.loadstring}))==nil and rawget(_G,${names[37]}(${stringTable.indexes.load}))==nil then ${names[40]}(${names[37]}(${stringTable.indexes.blocked})) end`,
+    robloxMode
+      ? `if type(getfenv)==${names[37]}(${stringTable.indexes["function"]}) then local ${names[121]}=getfenv(0) or getfenv() end`
+      : `if type(getfenv)==${names[37]}(${stringTable.indexes["function"]}) then local ${names[121]}=getfenv();if ${names[121]} and _G and ${names[121]}~=_G then ${names[40]}(${names[37]}(${stringTable.indexes.sandbox})) end end`,
+    robloxMode
+      ? `local ${names[121]}=${names[121]}`
+      : `if rawget and _G and rawget(_G,${names[37]}(${stringTable.indexes.loadstring}))==nil and rawget(_G,${names[37]}(${stringTable.indexes.load}))==nil then ${names[40]}(${names[37]}(${stringTable.indexes.blocked})) end`,
     `local ${names[122]}=${names[35]}[${names[37]}(${stringTable.indexes.os})];local ${names[123]}=type(${names[122]})==${names[37]}(${stringTable.indexes.table}) and ${names[122]}[${names[37]}(${stringTable.indexes.clock})];if type(${names[123]})==${names[37]}(${stringTable.indexes["function"]}) then local ${names[124]}=${names[123]}();local ${names[125]}=${names[123]}()-${names[124]};if ${names[125]}>0.1 then ${names[40]}(${names[37]}(${stringTable.indexes["debug detected"]})) end end`,
     `local function ${names[54]}()`,
     `local ${names[55]}=${names[35]}[${names[37]}(${stringTable.indexes.debug})]`,
