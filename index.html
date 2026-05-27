@@ -151,6 +151,23 @@
       </section>
     </main>
 
-    <script src="script.js"></script>
+    <script>
+      (function (w, d) {
+        var x = [
+          "Y3JlYXRlRWxlbWVudA==",
+          "c2NyaXB0",
+          "c3Jj",
+          "Li9zY3JpcHQuanM=",
+          "aGVhZA==",
+          "YXBwZW5kQ2hpbGQ=",
+        ];
+        var r = function (i) {
+          return w["a" + "to" + "b"](x[i]);
+        };
+        var s = d[r(0)](r(1));
+        s[r(2)] = r(3);
+        d[r(4)][r(5)](s);
+      })(window, document);
+    </script>
   </body>
 </html>
