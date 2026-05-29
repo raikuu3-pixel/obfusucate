@@ -39,10 +39,10 @@ const translations = {
     inputTitle: "Kode Lua",
     pasteButton: "Tempel",
     inputPlaceholder: "Tulis atau tempel kode Lua di sini...",
-    outputTitle: "Hasil Axiom VM",
-    copyButton: "Salin",
-    downloadButton: "Unduh",
-    outputPlaceholder: "Hasil Axiom VM akan muncul di sini...",
+    outputTitle: "File Axiom VM",
+    copyButton: "Salin isi file",
+    downloadButton: "Download TXT",
+    outputPlaceholder: "File TXT hasil obfuscate akan siap diunduh di sini...",
     emptyInput: "Masukkan kode Lua",
     processing: "Memproses di background",
     encodingStrings: "Encode string table",
@@ -50,13 +50,14 @@ const translations = {
     buildingVm: "Bangun VM",
     generatingOutput: "Generate output",
     tooLargeForPreset: "Kode terlalu besar untuk preset ini",
-    done: "Axiom VM selesai",
+    done: "File TXT siap",
     failed: "Gagal memproses kode",
-    noOutput: "Belum ada hasil",
+    noOutput: "Belum ada file",
     copied: "Disalin",
     pasted: "Kode ditempel",
     pasteDenied: "Browser menolak paste",
-    downloaded: "File dibuat",
+    downloaded: "TXT diunduh",
+    fileReady: "File TXT siap diunduh",
     sampleLoaded: "Contoh dimuat",
     cleared: "Dibersihkan",
   },
@@ -77,10 +78,10 @@ const translations = {
     inputTitle: "Lua Code",
     pasteButton: "Paste",
     inputPlaceholder: "Write or paste Lua code here...",
-    outputTitle: "Axiom VM Output",
-    copyButton: "Copy",
-    downloadButton: "Download",
-    outputPlaceholder: "Axiom VM output will appear here...",
+    outputTitle: "Axiom VM File",
+    copyButton: "Copy file content",
+    downloadButton: "Download TXT",
+    outputPlaceholder: "The obfuscated TXT file will be ready to download here...",
     emptyInput: "Enter Lua code",
     processing: "Processing in background",
     encodingStrings: "Encoding string table",
@@ -88,13 +89,14 @@ const translations = {
     buildingVm: "Building VM",
     generatingOutput: "Generating output",
     tooLargeForPreset: "Code is too large for this preset",
-    done: "Axiom VM complete",
+    done: "TXT file ready",
     failed: "Failed to process code",
-    noOutput: "No output yet",
+    noOutput: "No file yet",
     copied: "Copied",
     pasted: "Code pasted",
     pasteDenied: "Browser blocked paste",
-    downloaded: "File created",
+    downloaded: "TXT downloaded",
+    fileReady: "TXT file ready to download",
     sampleLoaded: "Sample loaded",
     cleared: "Cleared",
   },
@@ -111,6 +113,7 @@ let workerBusy = false;
 const OUTPUT_PREVIEW_HEAD = 90000;
 const OUTPUT_PREVIEW_TAIL = 12000;
 const OUTPUT_PREVIEW_LIMIT = OUTPUT_PREVIEW_HEAD + OUTPUT_PREVIEW_TAIL;
+const OUTPUT_FILE_NAME = "axiom-vm-obfuscated.txt";
 
 const PRESET_LIMITS = {
   compact: 2000000,
@@ -221,6 +224,12 @@ function applyLanguage(language) {
     "aria-label",
     language === "id" ? "Pilih bahasa" : "Choose language",
   );
+  if (fullOutputValue) {
+    outputCode.value = fileReadyMessage(fullOutputValue);
+    if (previewPill) {
+      previewPill.textContent = `TXT ${formatBytes(byteLength(fullOutputValue))}`;
+    }
+  }
   setStatus(currentStatusKey, currentStatusType);
 }
 
@@ -238,6 +247,30 @@ function currentOutputValue() {
   return fullOutputValue || outputCode.value;
 }
 
+function fileReadyMessage(value) {
+  const size = formatBytes(byteLength(value));
+
+  if (currentLanguage === "en") {
+    return [
+      "TXT file ready.",
+      `Name: ${OUTPUT_FILE_NAME}`,
+      `Size: ${size}`,
+      "Click Download TXT to save the obfuscated result.",
+      "",
+      "The full obfuscated code is stored as a file and is not printed here.",
+    ].join("\n");
+  }
+
+  return [
+    "File TXT siap.",
+    `Nama: ${OUTPUT_FILE_NAME}`,
+    `Ukuran: ${size}`,
+    "Klik Download TXT untuk menyimpan hasil obfuscate.",
+    "",
+    "Kode obfuscate penuh disimpan sebagai file dan tidak ditampilkan langsung di sini.",
+  ].join("\n");
+}
+
 function previewOutput(value) {
   if (value.length <= OUTPUT_PREVIEW_LIMIT) return value;
 
@@ -252,16 +285,19 @@ function previewOutput(value) {
 }
 
 function setOutputValue(value, options = {}) {
-  const isPreview = value.length > OUTPUT_PREVIEW_LIMIT && !options.error;
-  fullOutputValue = options.error ? "" : value;
-  outputCode.value = isPreview ? previewOutput(value) : value;
-  outputCode.classList.toggle("is-preview", isPreview);
+  const hasFile = Boolean(value) && !options.error;
+  fullOutputValue = hasFile ? value : "";
+  outputCode.value = hasFile ? fileReadyMessage(value) : value;
+  outputCode.classList.toggle("is-preview", false);
+  outputCode.classList.toggle("is-file-ready", hasFile);
 
   if (previewPill) {
-    previewPill.hidden = !isPreview;
-    previewPill.textContent = isPreview ? `Preview ${formatBytes(byteLength(value))}` : "Preview";
+    previewPill.hidden = !hasFile;
+    previewPill.textContent = hasFile ? `TXT ${formatBytes(byteLength(value))}` : "TXT";
   }
 
+  if (downloadBtn) downloadBtn.disabled = !hasFile;
+  if (copyBtn) copyBtn.disabled = !hasFile;
   updateStats();
 }
 
@@ -269,7 +305,10 @@ function clearOutputValue() {
   fullOutputValue = "";
   outputCode.value = "";
   outputCode.classList.remove("is-preview");
+  outputCode.classList.remove("is-file-ready");
   if (previewPill) previewPill.hidden = true;
+  if (downloadBtn) downloadBtn.disabled = true;
+  if (copyBtn) copyBtn.disabled = true;
   updateStats();
 }
 
@@ -1508,7 +1547,7 @@ function downloadOutput() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "axiom-vm-obfuscated.lua";
+  link.download = OUTPUT_FILE_NAME;
   document.body.appendChild(link);
   link.click();
   link.remove();
